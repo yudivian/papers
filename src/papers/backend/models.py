@@ -61,6 +61,9 @@ class GlobalDocumentMeta(BaseModel):
     file_size: int = Field(..., description="Physical size of the PDF in bytes")
     storage_uri: str = Field(..., description="Internal URI to locate the file via storage adapters")
     source: str = Field(default="openalex", description="Origin of the document metadata")
+    abstract: Optional[str] = Field(None, description="Resumen completo reconstruido del paper")
+    keywords: List[str] = Field(default_factory=list, description="Top 10 conceptos o palabras clave")
+    institutions: List[str] = Field(default_factory=list, description="Instituciones únicas de los autores")
 
 class KnowledgeBaseEntry(BaseModel):
     """

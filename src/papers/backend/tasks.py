@@ -25,6 +25,7 @@ from papers.backend.config import Settings
 from papers.backend.models import GlobalDocumentMeta, DownloadStatus
 from papers.backend.data_sources import get_data_source
 from papers.backend.storages import get_storage
+from papers.backend.search import SemanticEngine
 
 settings = Settings.load_from_yaml()
 db = BeaverDB(settings.database.file)
@@ -127,6 +128,7 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
     docs_db = db.dict("global_documents")
     kbs_db = db.dict("knowledge_bases")
     downloads_db = db.dict("downloads")
+    vectors_db = db.dict("semantic_vectors")
 
     if ticket_id in downloads_db:
         req = downloads_db[ticket_id]
@@ -173,6 +175,16 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
         meta.file_size = len(pdf_bytes)
         
         docs_db[doi] = meta.model_dump(mode="json")
+        if doi not in vectors_db:
+            engine = SemanticEngine()
+            text_context = engine.build_semantic_text(meta)
+            vector = engine.generate_embedding(text_context)
+            
+            vectors_db[doi] = {
+                "doi": doi,
+                "vector": vector,
+                "text_chunk": text_context 
+            }
         await _link_to_knowledge_base(doi, kb_id, kbs_db)
         
         if ticket_id in downloads_db:
