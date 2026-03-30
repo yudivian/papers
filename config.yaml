@@ -22,7 +22,11 @@ data_sources:
     - "cache"
     - "openalex"
   openalex:
-    mailto: "papers@uh.cu"
+    system_keys: 
+      - "TU_API_KEY_INSTITUCIONAL_1"
+      - "TU_API_KEY_INSTITUCIONAL_2"
+    daily_search_limit: 10
+    allow_system_fallback: true
 
 # Logical limits
 quotas:

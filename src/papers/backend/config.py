@@ -38,11 +38,17 @@ class StorageConfig(BaseModel):
     selected: str = "local"
     local: LocalStorageConfig = Field(default_factory=LocalStorageConfig)
 
+# ... (importaciones existentes)
+
 class OpenAlexConfig(BaseModel):
     """
     Configuration for the OpenAlex data source API.
     """
-    mailto: str
+    system_keys: List[str] = Field(default_factory=list)
+    daily_search_limit: int = Field(default=10, ge=0)    
+    allow_system_fallback: bool = Field(default=True)
+
+# ... (resto del archivo se mantiene igual)
 
 class DataSourcesConfig(BaseModel):
     """

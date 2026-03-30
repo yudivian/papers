@@ -97,3 +97,28 @@ class SearchQuery(BaseModel):
     text: str = Field(..., min_length=3)
     kb_id: Optional[str] = Field(None, description="Optional filter to search within a specific project")
     limit: int = Field(default=10, ge=1, le=50)
+    
+class UserAdapterRegistry(BaseModel):
+    """
+    Tracks which data adapters a user has initialized or interacted with.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: str = Field(..., description="Unique identifier of the user who owns this registry")
+    active_adapters: List[str] = Field(default_factory=list, description="List of initialized adapter names")
+    last_interaction: Dict[str, datetime] = Field(default_factory=dict, description="Timestamp of the last activity per adapter")
+
+class OpenAlexUserStatus(BaseModel):
+    """
+    Satellite state for OpenAlex-specific metadata, including personal keys and search quotas.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: str = Field(..., description="Unique identifier of the user")
+    personal_api_key: Optional[str] = Field(None, description="User-provided OpenAlex API key")
+    personal_key_active: bool = Field(default=True, description="Health status of the personal API key")
+    daily_system_search_count: int = Field(default=0, description="Number of text searches using the system pool")
+    last_reset: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp for the next daily quota renewal cycle"
+    )
