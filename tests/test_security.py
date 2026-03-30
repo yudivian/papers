@@ -29,7 +29,7 @@ def mock_settings():
         app={"environment": "testing", "log_level": "DEBUG", "server": {"host": "localhost", "port": 8000}},
         database={"file": "test.db"},
         storage={"selected": "local", "local": {"base_path": "/tmp"}},
-        data_sources={"priority": ["cache"], "openalex": {"mailto": "test@test.com"}},
+        data_sources={"priority": ["cache"], "openalex": {"system_keys": ["test_key"]}},
         quotas=quotas,
         search={"model_name": "test-model"}
     )

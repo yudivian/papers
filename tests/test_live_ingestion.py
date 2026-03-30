@@ -7,6 +7,7 @@ from beaver import BeaverDB
 
 from papers.backend.tasks import ingest_paper
 from papers.backend.models import KnowledgeBase, DownloadStatus
+from papers.backend.config import Settings
 
 @pytest.fixture
 def live_env():
@@ -44,17 +45,28 @@ def test_live_network_ingestion_flow(live_env):
     downloads_db = test_db.dict("downloads")
     downloads_db[ticket_id] = {"status": DownloadStatus.PENDING.value}
 
+    # Cargamos la configuración real para obtener las llaves válidas de config.yaml
+    real_settings = Settings.load_from_yaml()
+
     with patch("papers.backend.tasks.db", test_db), \
          patch("papers.backend.tasks.settings") as mock_settings:
 
         mock_settings.storage.selected = "local"
         mock_settings.storage.local.base_path = live_env["storage_path"]
         mock_settings.data_sources.priority = ["openalex"]
-        mock_settings.data_sources.openalex.mailto = "bot@example.com"
+        
+        # [CORRECCIÓN APLICADA AQUÍ]
+        mock_settings.data_sources.openalex.system_keys = real_settings.data_sources.openalex.system_keys
+        mock_settings.data_sources.openalex.allow_system_fallback = True
         mock_settings.database.file = live_env["db_path"]
 
         # Pasamos ticket_id como primer argumento
         result = ingest_paper.callable(ticket_id, real_doi, user_id, kb_id)
+
+        # Imprimir el error exacto si falla para no tener que adivinar
+        if not result:
+            error_msg = downloads_db[ticket_id].get('error_message', 'Error desconocido')
+            print(f"\n[ERROR DEL WORKER] La descarga falló con el mensaje: {error_msg}")
 
         assert result is True
 

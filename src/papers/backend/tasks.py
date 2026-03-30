@@ -146,9 +146,10 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
         for source_name in settings.data_sources.priority:
             source = get_data_source(
                 source_name, 
-                user_id=user_id,               # Requerido por el nuevo OpenAlexSource
-                db=db,                         # Requerido por el nuevo OpenAlexSource
-                db_path=settings.database.file # Mantenido por retrocompatibilidad con BeaverCacheSource
+                user_id=user_id,               
+                db=db,                         
+                config=settings.data_sources.openalex,                         
+                db_path=settings.database.file 
             )
             meta = await source.fetch_by_doi(doi)
             if meta:

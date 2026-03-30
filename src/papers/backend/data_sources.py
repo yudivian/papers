@@ -78,8 +78,7 @@ class OpenAlexSource(BaseDataSource):
         self.db = db
         self.logger = logging.getLogger(__name__)
         
-        settings = Settings.load_from_yaml()
-        self.config = settings.data_sources.openalex
+        self.config = kwargs.get("config") or Settings.load_from_yaml().data_sources.openalex
         
         self.registry_db = self.db.dict("adapter_registry")
         self.status_db = self.db.dict("openalex_user_status")
