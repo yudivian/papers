@@ -1,122 +1,138 @@
 import pytest
+import os
+from datetime import datetime, timezone, timedelta
+from beaver import BeaverDB
 from papers.backend.data_sources import get_data_source
+from papers.backend.models import OpenAlexUserStatus
 
-def test_registry_resolves_correct_adapters():
-    """
-    Validates that the adapter registry correctly resolves the cache adapter.
-    """
-    source = get_data_source("cache")
-    assert source.name == "cache"
+# ==============================================================================
+# FIXTURES
+# ==============================================================================
 
-def test_registry_raises_on_unknown():
+@pytest.fixture
+def db_context(tmp_path):
     """
-    Validates that the registry rejects invalid adapter names.
+    Provides a volatile BeaverDB instance for isolation.
     """
-    with pytest.raises(ValueError):
-        get_data_source("non_existent_source")
+    db_path = tmp_path / "test_integration.db"
+    return BeaverDB(str(db_path))
 
-@pytest.mark.anyio
-async def test_cache_fetch_by_doi():
-    """
-    Validates local cache retrieval without network calls.
-    """
-    source = get_data_source("cache")
-    source.docs_db = {
-        "10.1234/test": {
-            "doi": "10.1234/test", 
-            "title": "Cached", 
-            "storage_uri": "local", 
-            "authors": [], 
-            "year": 2024, 
-            "file_size": 100, 
-            "source": "cache"
-        }
-    }
-    result = await source.fetch_by_doi("10.1234/test")
-    
-    assert result is not None
-    assert result.title == "Cached"
+@pytest.fixture
+def user_id():
+    return "test_researcher_01"
+
+# ==============================================================================
+# INTEGRATION TESTS
+# ==============================================================================
 
 @pytest.mark.anyio
-async def test_cache_search_by_text():
+async def test_openalex_auto_registration(db_context, user_id):
     """
-    Validates local cache search behavior.
+    Tests that the adapter automatically registers itself in the user's
+    registry upon first instantiation.
     """
-    source = get_data_source("cache")
-    results = await source.search_by_text("query")
+    source = get_data_source("openalex", user_id=user_id, db=db_context)
     
-    assert len(results) == 0
+    registry_db = db_context.dict("adapter_registry")
+    assert user_id in registry_db
+    
+    registry = registry_db[user_id]
+    assert "openalex" in registry["active_adapters"]
 
 @pytest.mark.anyio
-async def test_live_openalex_fetch_open_access():
+async def test_live_openalex_fetch_by_doi(db_context, user_id):
     """
-    LIVE NETWORK TEST: Fetches a known Open Access paper.
-    Verifies that the OpenAlex adapter correctly identifies it as OA 
-    and returns a valid storage URI.
-    
-    DOI: 10.48550/arxiv.1706.03762 (Attention Is All You Need)
+    REAL NETWORK TEST: Fetches 'Attention Is All You Need' by DOI.
+    Verifies that fetch_by_doi remains functional and unlimited.
     """
-    source = get_data_source("openalex", mailto="bot@example.com")
+    source = get_data_source("openalex", user_id=user_id, db=db_context)
     result = await source.fetch_by_doi("10.48550/arxiv.1706.03762")
 
     assert result is not None
     assert "Attention" in result.title
-    assert len(result.authors) > 0
-    # Must have extracted a URL because it is Open Access
-    assert result.storage_uri != ""
-    assert "arxiv" in result.storage_uri.lower()
-
-@pytest.mark.anyio
-async def test_live_openalex_fetch_open_access():
-    """
-    LIVE NETWORK TEST: Fetches a known Open Access paper.
-    Verifies that the OpenAlex adapter correctly identifies it as OA 
-    and returns a valid storage URI, regardless of which global mirror it uses.
-    
-    DOI: 10.48550/arxiv.1706.03762 (Attention Is All You Need)
-    """
-    source = get_data_source("openalex", mailto="bot@example.com")
-    result = await source.fetch_by_doi("10.48550/arxiv.1706.03762")
-
-    assert result is not None
-    assert "Attention" in result.title
-    assert len(result.authors) > 0
-    
-    # We assert it found an HTTP link, we don't care if it's arxiv.org or a mirror
     assert result.storage_uri.startswith("http")
 
 @pytest.mark.anyio
-async def test_live_openalex_fetch_paywalled():
+async def test_system_quota_enforcement(db_context, user_id):
     """
-    LIVE NETWORK TEST: Fetches a strictly Closed Access (Paywalled) paper.
-    Using a 1954 chemistry paper to guarantee no Green OA preprints exist.
-    Verifies the adapter identifies is_oa=False and blocks the storage_uri.
-    
-    DOI: 10.1021/ja01646a008 (Journal of the American Chemical Society, 1954)
+    Tests that the system blocks searches after reaching the daily_search_limit.
+    In config.yaml, the limit is set to 2.
     """
-    source = get_data_source("openalex", mailto="bot@example.com")
-    result = await source.fetch_by_doi("10.1021/ja01646a008")
-
-    assert result is not None
-    # Must retrieve metadata correctly
-    assert result.title is not None
-    assert result.year == 1954
+    source = get_data_source("openalex", user_id=user_id, db=db_context)
     
-    # MUST block the URI because it's genuinely paywalled
-    assert result.storage_uri == ""
+    # 1. First search (allowed)
+    res1 = await source.search_by_text("neural networks", limit=1)
+    assert len(res1) > 0
+    
+    # 2. Second search (allowed)
+    res2 = await source.search_by_text("deep learning", limit=1)
+    assert len(res2) > 0
+    
+    # 3. Third search (MUST be blocked/return empty because limit is 2)
+    res3 = await source.search_by_text("transformers", limit=1)
+    assert len(res3) == 0
+    
+    # 4. Verify fetch_by_doi still works (unlimited)
+    res_doi = await source.fetch_by_doi("10.48550/arxiv.1706.03762")
+    assert res_doi is not None
 
 @pytest.mark.anyio
-async def test_live_openalex_search():
+async def test_lazy_reset_logic(db_context, user_id):
     """
-    LIVE NETWORK TEST: Executes a real text search against OpenAlex.
+    Tests that the adapter resets counters when a new day starts.
     """
-    source = get_data_source("openalex", mailto="bot@example.com")
-    results = await source.search_by_text("quantum computing", limit=3)
-
-    assert len(results) > 0
-    assert len(results) <= 3
+    # 1. Mock a state from "yesterday" with exhausted quota
+    status_db = db_context.dict("openalex_user_status")
+    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
     
-    for paper in results:
-        assert paper.doi is not None
-        assert paper.title is not None
-        assert isinstance(paper.storage_uri, str)
+    exhausted_status = OpenAlexUserStatus(
+        user_id=user_id,
+        daily_system_search_count=100,
+        last_reset=yesterday
+    )
+    status_db[user_id] = exhausted_status.model_dump(mode="json")
+    
+    # 2. Re-instantiate adapter
+    source = get_data_source("openalex", user_id=user_id, db=db_context)
+    
+    # 3. Trigger a search; it should reset the counter and succeed
+    results = await source.search_by_text("quantum physics", limit=1)
+    assert len(results) > 0
+    
+    # 4. Check DB to see if count was reset to 1 (current search)
+    new_status = OpenAlexUserStatus.model_validate(status_db[user_id])
+    assert new_status.daily_system_search_count == 1
+    assert new_status.last_reset.date() == datetime.now(timezone.utc).date()
+    
+@pytest.mark.anyio
+async def test_fallback_logic_disabled(db_context, user_id):
+    """
+    Tests that if allow_system_fallback is False, a user with an exhausted 
+    personal key is blocked even if the system pool has credits.
+    """
+    # 1. Setup: User has a personal key but it's marked as exhausted (inactive)
+    status_db = db_context.dict("openalex_user_status")
+    exhausted_status = OpenAlexUserStatus(
+        user_id=user_id,
+        personal_api_key="my_broken_key",
+        personal_key_active=False  # Key is "dead" for the day
+    )
+    status_db[user_id] = exhausted_status.model_dump(mode="json")
+    
+    # 2. Setup: Modify config at runtime to disable fallback
+    source = get_data_source("openalex", user_id=user_id, db=db_context)
+    source.config.allow_system_fallback = False
+    
+    # 3. Action: Attempt search
+    results = await source.search_by_text("machine learning", limit=1)
+    
+    # 4. Verification: Should be empty because fallback is disabled 
+    # and the personal key is inactive.
+    assert len(results) == 0
+    
+    # 5. Flip the switch: Enable fallback
+    source.config.allow_system_fallback = True
+    results_with_fallback = await source.search_by_text("machine learning", limit=1)
+    
+    # 6. Verification: Now it should succeed using the system pool
+    assert len(results_with_fallback) > 0
