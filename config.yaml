@@ -1,0 +1,35 @@
+# General system identity and environment
+app:
+  environment: "development"
+  log_level: "INFO"
+  server:
+    host: "0.0.0.0"
+    port: 8000
+
+# Local SQLite-based metadata and vector store
+database:
+  file: "papers.db"
+
+# Storage configuration
+storage:
+  selected: "local"
+  local:
+    base_path: "./data/"
+
+# Data sources and search priority
+data_sources:
+  priority: 
+    - "cache"
+    - "openalex"
+  openalex:
+    mailto: "papers@uh.cu"
+
+# Logical limits
+quotas:
+  user_logical_limit_gb: 5
+  max_concurrent_tasks: 10
+
+# Multilingual Semantic Search
+search:
+  # Paraphrase Multilingual MiniLM is small, fast, and supports 50+ languages
+  model_name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
