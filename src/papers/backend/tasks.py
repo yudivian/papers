@@ -31,7 +31,7 @@ settings = Settings.load_from_yaml()
 db = BeaverDB(settings.database.file)
 manager = Manager(db)
 
-async def _download_pdf(url: str, doi: str) -> Optional[bytes]:
+async def _download_asset(url: str, expected_mime: str) -> Optional[bytes]:
     """
     Executes a fortified, asynchronous HTTP GET request to retrieve PDF binaries.
 
@@ -54,25 +54,50 @@ async def _download_pdf(url: str, doi: str) -> Optional[bytes]:
                          None if the network times out, the server blocks the 
                          request, or the payload fails binary validation.
     """
-    if "arxiv." in doi.lower():
-        arxiv_id = doi.split("arxiv.")[-1]
-        url = f"https://export.arxiv.org/pdf/{arxiv_id}.pdf"
-    elif "arxiv.org/abs/" in url:
-        url = url.replace("arxiv.org/abs/", "export.arxiv.org/pdf/")
-        if not url.endswith(".pdf"):
-            url += ".pdf"
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/pdf"
+        "Accept": f"{expected_mime}, text/html;q=0.9"
     }
 
     async with httpx.AsyncClient(follow_redirects=True, headers=headers) as client:
         try:
             response = await client.get(url, timeout=30.0)
-            if response.status_code == 200:
+            
+            if response.status_code != 200:
+                return None
+
+            content_type = response.headers.get("Content-Type", "").lower()
+
+            # CASO 1: Es el binario directamente (Acierto directo)
+            if expected_mime == "application/pdf":
                 if response.content.startswith(b"%PDF"):
                     return response.content
+            elif expected_mime in content_type:
+                return response.content
+
+            # CASO 2: Heurística General de Metaetiquetas Académicas
+            # Si nos dieron un HTML pero buscábamos un PDF, buscamos el estándar de Google Scholar
+            if "text/html" in content_type and expected_mime == "application/pdf":
+                # Buscamos <meta name="citation_pdf_url" content="LA_URL_REAL">
+                match = re.search(
+                    r'<meta\s+(?:name|property)\s*=\s*["\']citation_pdf_url["\']\s+content\s*=\s*["\']([^"\']+)["\']', 
+                    response.text, 
+                    re.IGNORECASE
+                )
+                
+                if match:
+                    real_pdf_url = match.group(1)
+                    
+                    # Manejar URLs relativas por si acaso (ej. content="/pdf/123.pdf")
+                    if real_pdf_url.startswith("/"):
+                        parsed_base = httpx.URL(url)
+                        real_pdf_url = f"{parsed_base.scheme}://{parsed_base.host}{real_pdf_url}"
+                        
+                    # Segunda petición a la URL real descubierta
+                    pdf_response = await client.get(real_pdf_url, timeout=30.0)
+                    if pdf_response.status_code == 200 and pdf_response.content.startswith(b"%PDF"):
+                        return pdf_response.content
+
         except httpx.HTTPError:
             pass
             
@@ -159,19 +184,19 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
         if not meta or not meta.storage_uri.startswith("http"):
             raise ValueError("Target document is either non-existent or restricted behind a closed access paywall.")
 
-        pdf_bytes = await _download_pdf(meta.storage_uri, doi)
-        if not pdf_bytes:
+        asset_bytes = await _download_asset(meta.storage_uri, meta.mime_type)
+        if not asset_bytes:
             raise ValueError("Upstream repository blocked the download request or returned a corrupted payload.")
 
         storage = get_storage(
             settings.storage.selected, 
             base_path=settings.storage.local.base_path
         )
-        safe_filename = f"{doi.replace('/', '_')}.pdf"
-        local_uri = await storage.save(safe_filename, pdf_bytes)
+        safe_filename = f"{doi.replace('/', '_')}{meta.file_extension}"
+        local_uri = await storage.save(safe_filename, asset_bytes)
 
         meta.storage_uri = local_uri
-        meta.file_size = len(pdf_bytes)
+        meta.file_size = len(asset_bytes)
         
         docs_db[doi] = meta.model_dump(mode="json")
         if doi not in vectors_db:

@@ -57,7 +57,8 @@ def test_ingest_paper_full_orchestration(test_env):
     with patch("papers.backend.tasks.db", test_db), \
          patch("papers.backend.tasks.settings") as mock_settings, \
          patch("papers.backend.tasks.get_data_source") as mock_get_source, \
-         patch("papers.backend.tasks._download_pdf", new_callable=AsyncMock) as mock_dl:
+         patch("papers.backend.tasks._download_asset", new_callable=AsyncMock) as mock_dl, \
+         patch("papers.backend.tasks.SemanticEngine") as mock_engine: # <-- MOCK DEL MOTOR DE IA
 
         mock_settings.storage.selected = "local"
         mock_settings.storage.local.base_path = test_env["storage_path"]
@@ -68,17 +69,21 @@ def test_ingest_paper_full_orchestration(test_env):
         source_instance.fetch_by_doi = AsyncMock(return_value=mock_meta)
         mock_get_source.return_value = source_instance
         mock_dl.return_value = b"%PDF-1.4 Mock Data"
+        
+        # Le decimos al mock que devuelva datos falsos rápido sin usar CPU/Red
+        mock_engine.return_value.build_semantic_text.return_value = "Mock Text Context"
+        mock_engine.return_value.generate_embedding.return_value = [0.1, 0.2, 0.3]
 
-        # NUEVO: Pasamos el ticket_id como primer argumento
         result = ingest_paper.callable(ticket_id, test_doi, user_id, kb_id)
 
-        assert result is True
+        # Si falla, imprimimos el error exacto que la base de datos capturó
+        error_msg = downloads_db[ticket_id].get("error_message", "No error recorded")
+        assert result is True, f"Worker fail internally: {error_msg}"
         
         docs_db = test_db.dict("global_documents")
         assert test_doi in docs_db
         assert docs_db[test_doi]["file_size"] > 0
         
-        # Validamos que el estado del ticket haya cambiado a completado
         assert downloads_db[ticket_id]["status"] == DownloadStatus.COMPLETED.value
 
 def test_ingest_paper_cache_bypass(test_env):
@@ -125,7 +130,7 @@ def test_ingest_paper_download_resilience(test_env):
     with patch("papers.backend.tasks.db", test_db), \
          patch("papers.backend.tasks.settings") as mock_settings, \
          patch("papers.backend.tasks.get_data_source") as mock_get_source, \
-         patch("papers.backend.tasks._download_pdf", new_callable=AsyncMock) as mock_dl:
+         patch("papers.backend.tasks._download_asset", new_callable=AsyncMock) as mock_dl:
              
         mock_settings.storage.selected = "local"
         mock_settings.storage.local.base_path = test_env["storage_path"]

@@ -126,7 +126,6 @@ class OpenAlexSource(BaseDataSource):
     Autonomous OpenAlex adapter with built-in quota management and health monitoring.
     """
     name = "openalex"
-    BASE_URL = "https://api.openalex.org/works"
 
     def __init__(self, settings: Settings, db: BeaverDB, user_id: str, **kwargs):
         """
@@ -270,13 +269,12 @@ class OpenAlexSource(BaseDataSource):
         """
         Unlimited DOI lookup operation. Does not consume search quotas.
         """
-        url = f"{self.BASE_URL}/doi:{doi}"
+        url = f"{self.config.base_url}/doi:{doi}"
         data = await self._request_with_health_check(url, {})
         
         if not data:
             return None
 
-        # Extraer instituciones únicas
         institutions = list({
             inst["display_name"] 
             for a in data.get("authorships", []) 
@@ -290,7 +288,9 @@ class OpenAlexSource(BaseDataSource):
             authors=[a["author"]["display_name"] for a in data.get("authorships", [])],
             year=data.get("publication_year") or 0,
             file_size=0,
-            storage_uri=self._extract_oa_url(data),
+            storage_uri=self._extract_oa_url(data), # Pasa el data puro
+            mime_type="application/pdf",
+            file_extension=".pdf",
             source=self.name,
             abstract=self._reconstruct_abstract(data.get("abstract_inverted_index")),
             keywords=[c["display_name"] for c in data.get("concepts", [])[:10]],
@@ -301,8 +301,8 @@ class OpenAlexSource(BaseDataSource):
         """
         Restricted text search operation. Subject to daily user quotas.
         """
-        params = {"search": query, "per-page": limit}
-        data = await self._request_with_health_check(self.BASE_URL, params, is_search=True)
+        params = {"search": query, "per-page": limit}        
+        data = await self._request_with_health_check(self.config.base_url, params, is_search=True)
         
         if not data:
             return []

@@ -44,6 +44,7 @@ class OpenAlexConfig(BaseModel):
     """
     Configuration for the OpenAlex data source API.
     """
+    base_url: str = Field(default="https://api.openalex.org/works", description="Base URL for the OpenAlex API")
     system_keys: List[str] = Field(default_factory=list)
     daily_search_limit: int = Field(default=10, ge=0)    
     allow_system_fallback: bool = Field(default=True)
