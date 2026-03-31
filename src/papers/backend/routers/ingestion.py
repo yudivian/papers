@@ -69,7 +69,7 @@ async def start_ingestion(
         "kb_id": payload.kb_id
     }
     
-    ingest_paper.push(
+    ingest_paper.submit(
         ticket_id=ticket_id, 
         doi=payload.doi, 
         user_id=user_id, 

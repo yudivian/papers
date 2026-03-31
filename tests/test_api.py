@@ -228,7 +228,7 @@ def test_ingestion_async_flow(mock_ingest, api_env):
     Tests the asynchronous ingestion lifecycle and task polling mechanism.
     
     This ensures that the ingestion start endpoint successfully enqueues the background 
-    task with the correct parameters using the Castor push method, generates a tracking 
+    task with the correct parameters using the Castor submit method, generates a tracking 
     identifier, and that the status endpoint accurately reports the initial pending state.
     
     Args:
@@ -241,7 +241,7 @@ def test_ingestion_async_flow(mock_ingest, api_env):
     assert start_response.status_code == 202
     ticket_id = start_response.json()["ticket_id"]
     
-    mock_ingest.push.assert_called_once_with(
+    mock_ingest.submit.assert_called_once_with(
         ticket_id=ticket_id, doi="10.test/async", user_id="authorized_test_user", kb_id="kb_test_target"
     )
     
@@ -251,7 +251,7 @@ def test_ingestion_async_flow(mock_ingest, api_env):
     
     missing_status_response = client.get("/api/v1/ingestion/status/invalid_ticket_id")
     assert missing_status_response.status_code == 404
-
+    
 def test_documents_pdf_stream_and_delete(api_env):
     """
     Confirms the physical delivery of binary assets and their complete removal upon deletion.
