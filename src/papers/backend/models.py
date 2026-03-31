@@ -58,8 +58,10 @@ class GlobalDocumentMeta(BaseModel):
     title: str
     authors: List[str] = Field(default_factory=list)
     year: int
-    file_size: int = Field(..., description="Physical size of the PDF in bytes")
+    file_size: int = Field(..., description="Physical size of the asset in bytes")
     storage_uri: str = Field(..., description="Internal URI to locate the file via storage adapters")
+    mime_type: str = Field(default="application/pdf", description="MIME media type of the physical asset")
+    file_extension: str = Field(default=".pdf", description="File extension of the physical asset")
     source: str = Field(default="openalex", description="Origin of the document metadata")
     abstract: Optional[str] = Field(None, description="Resumen completo reconstruido del paper")
     keywords: List[str] = Field(default_factory=list, description="Top 10 conceptos o palabras clave")

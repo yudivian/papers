@@ -118,11 +118,13 @@ def test_documents_deep_cleanup(api_env):
     docs_db = db.dict("global_documents")
     docs_db["10.test/linked"] = {
         "doi": "10.test/linked", "title": "Linked Document", "year": 2024, 
-        "file_size": 19, "storage_uri": linked_file, "abstract": "", "keywords": []
+        "file_size": 19, "storage_uri": linked_file, "mime_type": "application/pdf", 
+        "file_extension": ".pdf", "abstract": "", "keywords": []
     }
     docs_db["10.test/unlinked"] = {
         "doi": "10.test/unlinked", "title": "Unlinked Document", "year": 2024, 
-        "file_size": 19, "storage_uri": unlinked_file, "abstract": "", "keywords": []
+        "file_size": 19, "storage_uri": unlinked_file, "mime_type": "application/pdf", 
+        "file_extension": ".pdf", "abstract": "", "keywords": []
     }
 
     kb_response = client.post("/api/v1/kbs", json={"name": "Active Project", "description": ""})
@@ -209,7 +211,9 @@ def test_health_and_users_real_quota(api_env):
     docs_db = db.dict("global_documents")
     docs_db["10.test/quota"] = {
         "doi": "10.test/quota", "title": "Quota Evaluation Document", "year": 2024, 
-        "file_size": len(binary_payload), "storage_uri": test_file, "abstract": "", "keywords": []
+        "file_size": len(binary_payload), "storage_uri": test_file, 
+        "mime_type": "application/pdf", "file_extension": ".pdf", 
+        "abstract": "", "keywords": []
     }
 
     health_response = client.get("/health")
@@ -273,7 +277,9 @@ def test_documents_pdf_stream_and_delete(api_env):
         
     db.dict("global_documents")["10.test/stream"] = {
         "doi": "10.test/stream", "title": "Stream Target", "year": 2024, 
-        "file_size": len(pdf_binary), "storage_uri": test_file, "abstract": "", "keywords": []
+        "file_size": len(pdf_binary), "storage_uri": test_file, 
+        "mime_type": "application/pdf", "file_extension": ".pdf", 
+        "abstract": "", "keywords": []
     }
     db.dict("semantic_vectors")["10.test/stream"] = {"vector": [0.1, 0.2, 0.3]}
 
