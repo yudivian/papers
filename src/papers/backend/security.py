@@ -16,17 +16,17 @@ def get_settings() -> Settings:
     """
     return Settings.load_from_yaml()
 
-def get_db() -> BeaverDB:
+def get_db(settings: Settings = Depends(get_settings)) -> BeaverDB:
     """
     Yield a thread-safe instance of the BeaverDB client.
     
     This dependency abstracts the database connection lifecycle, allowing 
-    FastAPI to manage the connection context per request.
+    FastAPI to manage the connection context per request dynamically.
     
     Returns:
         An active BeaverDB instance connected to the configured storage file.
     """
-    return BeaverDB("papers.db")
+    return BeaverDB(settings.database.file)
 
 async def get_current_user(
     x_user_id: str = Header(..., alias="X-User-ID"),

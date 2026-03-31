@@ -5,23 +5,28 @@ This module provides reusable components for database connection pooling
 and request-scoped authentication resolution.
 """
 
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Depends
 from beaver import BeaverDB
 
 from papers.backend.config import Settings
 
-_settings = Settings.load_from_yaml()
-_db_instance = BeaverDB(_settings.database.file)
-
-def get_db() -> BeaverDB:
+def get_settings() -> Settings:
     """
-    Yields a singleton BeaverDB instance for the current request lifecycle.
+    Provide a cached or newly instantiated Settings object.
     """
-    return _db_instance
+    return Settings.load_from_yaml()
 
-def get_current_user(x_user_id: str = Header(default="default_user")) -> str:
+def get_db(settings: Settings = Depends(get_settings)) -> BeaverDB:
+    """
+    Yields a BeaverDB instance for the current request lifecycle 
+    using the dynamically injected configuration.
+    """
+    return BeaverDB(settings.database.file)
+
+def get_current_user(x_user_id: str = Header(..., alias="X-User-ID")) -> str:
     """
     Extracts and validates the caller's identity from HTTP headers.
+    Requires explicit user identity (no defaults).
     """
     if not x_user_id:
         raise HTTPException(status_code=401, detail="Missing X-User-ID header")
