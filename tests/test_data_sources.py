@@ -4,10 +4,15 @@ from datetime import datetime, timezone, timedelta
 from beaver import BeaverDB
 from papers.backend.data_sources import get_data_source
 from papers.backend.models import OpenAlexUserStatus
+from papers.backend.config import Settings
 
 # ==============================================================================
 # FIXTURES
 # ==============================================================================
+
+@pytest.fixture
+def sys_settings():
+    return Settings.load_from_yaml()
 
 @pytest.fixture
 def db_context(tmp_path):
@@ -21,17 +26,18 @@ def db_context(tmp_path):
 def user_id():
     return "test_researcher_01"
 
+
 # ==============================================================================
 # INTEGRATION TESTS
 # ==============================================================================
 
 @pytest.mark.anyio
-async def test_openalex_auto_registration(db_context, user_id):
+async def test_openalex_auto_registration(db_context, user_id, sys_settings):
     """
     Tests that the adapter automatically registers itself in the user's
     registry upon first instantiation.
     """
-    source = get_data_source("openalex", user_id=user_id, db=db_context)
+    source = get_data_source("openalex", settings=sys_settings, user_id=user_id, db=db_context)
     
     registry_db = db_context.dict("adapter_registry")
     assert user_id in registry_db
@@ -40,12 +46,12 @@ async def test_openalex_auto_registration(db_context, user_id):
     assert "openalex" in registry["active_adapters"]
 
 @pytest.mark.anyio
-async def test_live_openalex_fetch_by_doi(db_context, user_id):
+async def test_live_openalex_fetch_by_doi(db_context, user_id, sys_settings):
     """
     REAL NETWORK TEST: Fetches 'Attention Is All You Need' by DOI.
     Verifies that fetch_by_doi remains functional and unlimited.
     """
-    source = get_data_source("openalex", user_id=user_id, db=db_context)
+    source = get_data_source("openalex", settings=sys_settings, user_id=user_id, db=db_context)
     result = await source.fetch_by_doi("10.48550/arxiv.1706.03762")
 
     assert result is not None
@@ -53,12 +59,12 @@ async def test_live_openalex_fetch_by_doi(db_context, user_id):
     assert result.storage_uri.startswith("http")
 
 @pytest.mark.anyio
-async def test_system_quota_enforcement(db_context, user_id):
+async def test_system_quota_enforcement(db_context, user_id, sys_settings):
     """
     Tests that the system blocks searches after reaching the daily_search_limit.
     In config.yaml, the limit is set to 2.
     """
-    source = get_data_source("openalex", user_id=user_id, db=db_context)
+    source = get_data_source("openalex", settings=sys_settings, user_id=user_id, db=db_context)
     
     # 1. First search (allowed)
     res1 = await source.search_by_text("neural networks", limit=1)
@@ -77,7 +83,7 @@ async def test_system_quota_enforcement(db_context, user_id):
     assert res_doi is not None
 
 @pytest.mark.anyio
-async def test_lazy_reset_logic(db_context, user_id):
+async def test_lazy_reset_logic(db_context, user_id, sys_settings):
     """
     Tests that the adapter resets counters when a new day starts.
     """
@@ -93,7 +99,7 @@ async def test_lazy_reset_logic(db_context, user_id):
     status_db[user_id] = exhausted_status.model_dump(mode="json")
     
     # 2. Re-instantiate adapter
-    source = get_data_source("openalex", user_id=user_id, db=db_context)
+    source = get_data_source("openalex", settings=sys_settings, user_id=user_id, db=db_context)
     
     # 3. Trigger a search; it should reset the counter and succeed
     results = await source.search_by_text("quantum physics", limit=1)
@@ -105,7 +111,7 @@ async def test_lazy_reset_logic(db_context, user_id):
     assert new_status.last_reset.date() == datetime.now(timezone.utc).date()
     
 @pytest.mark.anyio
-async def test_fallback_logic_disabled(db_context, user_id):
+async def test_fallback_logic_disabled(db_context, user_id, sys_settings):
     """
     Tests that if allow_system_fallback is False, a user with an exhausted 
     personal key is blocked even if the system pool has credits.
@@ -120,7 +126,7 @@ async def test_fallback_logic_disabled(db_context, user_id):
     status_db[user_id] = exhausted_status.model_dump(mode="json")
     
     # 2. Setup: Modify config at runtime to disable fallback
-    source = get_data_source("openalex", user_id=user_id, db=db_context)
+    source = get_data_source("openalex", settings=sys_settings, user_id=user_id, db=db_context)
     source.config.allow_system_fallback = False
     
     # 3. Action: Attempt search

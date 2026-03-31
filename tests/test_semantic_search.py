@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from beaver import BeaverDB
+from papers.backend.config import Settings
 
 from papers.backend.models import GlobalDocumentMeta
 from papers.backend.data_sources import get_data_source
@@ -71,7 +72,9 @@ async def test_semantic_ranking_and_retrieval(MockEngine, semantic_db):
     MockEngine.return_value = mock_engine_instance
 
     # 2. Initialize the cache adapter pointing to our populated mock DB
-    cache_source = get_data_source("cache", db_path=semantic_db)
+    sys_settings = Settings.load_from_yaml()
+    db_instance = BeaverDB(semantic_db)
+    cache_source = get_data_source("cache", settings=sys_settings, db=db_instance)
 
     # 3. Execute the search (the actual string doesn't matter because of the mock)
     results = await cache_source.search_by_text("artificial neural networks", limit=3)
@@ -98,7 +101,9 @@ async def test_cache_search_empty_database(tmp_path):
     without throwing mathematical errors (e.g., division by zero).
     """
     db_path = tmp_path / "empty.db"
-    cache_source = get_data_source("cache", db_path=str(db_path))
+    sys_settings = Settings.load_from_yaml()
+    db_instance = BeaverDB(str(db_path))
+    cache_source = get_data_source("cache", settings=sys_settings, db=db_instance)
     
     results = await cache_source.search_by_text("machine learning")
     assert len(results) == 0

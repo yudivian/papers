@@ -43,22 +43,13 @@ async def resolve_doi(
     Raises:
         HTTPException: A 404 error if the DOI cannot be resolved across all providers.
     """
-    cache_source = get_data_source(
-        "cache", 
-        db_path=settings.database.file
-    )
+    cache_source = get_data_source("cache", settings=settings, db=db)
     
     cached_meta = await cache_source.fetch_by_doi(doi)
     if cached_meta:
         return cached_meta
 
-    openalex_source = get_data_source(
-        "openalex",
-        user_id=user_id,
-        db=db,
-        config=settings.data_sources.openalex,
-        db_path=settings.database.file
-    )
+    openalex_source = get_data_source("openalex", settings=settings, db=db, user_id=user_id)
     
     external_meta = await openalex_source.fetch_by_doi(doi)
     if external_meta:
@@ -73,7 +64,8 @@ async def resolve_doi(
 async def semantic_search(
     q: str = Query(..., description="Natural language semantic query string"),
     limit: int = Query(10, ge=1, le=50, description="Maximum number of results to return"),
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    db: BeaverDB = Depends(get_db)
 ) -> List[GlobalDocumentMeta]:
     """
     Executes a localized semantic vector search against ingested documents.
@@ -91,10 +83,7 @@ async def semantic_search(
         List[GlobalDocumentMeta]: A ranked array of the most semantically relevant 
                                   documents, ordered by descending similarity score.
     """
-    cache_source = get_data_source(
-        "cache", 
-        db_path=settings.database.file
-    )
+    cache_source = get_data_source("cache", settings=settings, db=db)
     
     results = await cache_source.search_by_text(query=q, limit=limit)
     return results

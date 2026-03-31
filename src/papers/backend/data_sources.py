@@ -22,13 +22,13 @@ def register_source(cls: Type["BaseDataSource"]) -> Type["BaseDataSource"]:
     _DATA_SOURCES[cls.name] = cls
     return cls
 
-def get_data_source(name: str, **kwargs) -> "BaseDataSource":
+def get_data_source(name: str, settings: Settings, db: BeaverDB, **kwargs) -> "BaseDataSource":
     """
     Factory to instantiate data sources with the required context.
     """
     if name not in _DATA_SOURCES:
         raise ValueError(f"Unknown adapter: '{name}'")
-    return _DATA_SOURCES[name](**kwargs)
+    return _DATA_SOURCES[name](settings=settings, db=db, **kwargs)
 
 class BaseDataSource(ABC):
     """
@@ -51,8 +51,8 @@ class BeaverCacheSource(BaseDataSource):
     """
     name = "cache"
 
-    def __init__(self, db_path: str = "papers.db", **kwargs):
-        self.db = BeaverDB(db_path)
+    def __init__(self, settings: Settings, db: BeaverDB, **kwargs):
+        self.db = db
         self.docs_db = self.db.dict("global_documents")
 
     async def fetch_by_doi(self, doi: str) -> Optional[GlobalDocumentMeta]:
@@ -128,7 +128,7 @@ class OpenAlexSource(BaseDataSource):
     name = "openalex"
     BASE_URL = "https://api.openalex.org/works"
 
-    def __init__(self, user_id: str, db: BeaverDB, **kwargs):
+    def __init__(self, settings: Settings, db: BeaverDB, user_id: str, **kwargs):
         """
         Initializes the source with user context and database access for satellite state.
         """
@@ -136,7 +136,7 @@ class OpenAlexSource(BaseDataSource):
         self.db = db
         self.logger = logging.getLogger(__name__)
         
-        self.config = kwargs.get("config") or Settings.load_from_yaml().data_sources.openalex
+        self.config = settings.data_sources.openalex
         
         self.registry_db = self.db.dict("adapter_registry")
         self.status_db = self.db.dict("openalex_user_status")
