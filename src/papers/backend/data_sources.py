@@ -47,7 +47,7 @@ class BaseDataSource(ABC):
 @register_source
 class BeaverCacheSource(BaseDataSource):
     """
-    Local cache adapter using BeaverDB for O(1) metadata lookups.
+    Local cache adapter using BeaverDB for semantic metadata lookups.
     """
     name = "cache"
 
@@ -57,7 +57,7 @@ class BeaverCacheSource(BaseDataSource):
 
     async def fetch_by_doi(self, doi: str) -> Optional[GlobalDocumentMeta]:
         """
-        Retrieves a document from the local cache and forces the source flag.
+        Retrieves a document from the local cache.
         """
         if doi in self.docs_db:
             meta = GlobalDocumentMeta.model_validate(self.docs_db[doi])
@@ -68,23 +68,6 @@ class BeaverCacheSource(BaseDataSource):
     async def search_by_text(self, query: str, limit: int = 10) -> List[GlobalDocumentMeta]:
         """
         Executes a localized semantic search against cached document metadata.
-
-        This method leverages the SemanticEngine to convert the incoming text query 
-        into a mathematical vector representation. It then iterates through all 
-        persisted document vectors in the local database, calculating the cosine 
-        similarity between the query and each document's conceptual footprint.
-
-        Documents are ranked by their similarity score, and the metadata for the 
-        highest-scoring matches is retrieved and returned. The source attribute 
-        is explicitly overridden to indicate the local origin of the result.
-
-        Args:
-            query: The natural language search string provided by the user.
-            limit: The maximum number of relevant documents to return.
-
-        Returns:
-            List[GlobalDocumentMeta]: A ranked list of document metadata objects 
-                                      that are semantically related to the query.
         """
         vectors_db = self.db.dict("semantic_vectors")
         if not vectors_db:
@@ -129,14 +112,12 @@ class OpenAlexSource(BaseDataSource):
 
     def __init__(self, settings: Settings, db: BeaverDB, user_id: str, **kwargs):
         """
-        Initializes the source with user context and database access for satellite state.
+        Initializes the source with user context and database access.
         """
         self.user_id = user_id
         self.db = db
         self.logger = logging.getLogger(__name__)
-        
         self.config = settings.data_sources.openalex
-        
         self.registry_db = self.db.dict("adapter_registry")
         self.status_db = self.db.dict("openalex_user_status")
         
@@ -160,7 +141,6 @@ class OpenAlexSource(BaseDataSource):
     def _get_status(self) -> OpenAlexUserStatus:
         """
         Retrieves or initializes the satellite state for the current user.
-        Includes the Lazy Reset logic for daily quota cycles.
         """
         data = self.status_db.get(self.user_id)
         if not data:
@@ -180,29 +160,22 @@ class OpenAlexSource(BaseDataSource):
     async def _request_with_health_check(self, url: str, params: dict, is_search: bool = False) -> Optional[dict]:
         """
         Core execution engine that monitors API health and credit consumption.
-        Implements key rotation, BYOK priority, and institutional fallback logic.
         """
         status = self._get_status()
         keys_to_try = []
         
-        # 1. PRIORIDAD: Llave Personal (BYOK) si existe y está sana
         if status.personal_api_key and status.personal_key_active:
             keys_to_try.append(("personal", status.personal_api_key))
         
-        # 2. POOL INSTITUCIONAL Y FALLBACK:
         if not is_search:
-            # Para DOI: Siempre se añade el pool porque es ilimitado y gratis.
             for k in self.config.system_keys:
                 keys_to_try.append(("system", k))
         else:
-            # Para Búsqueda: Solo se añade si no hay llave personal O si el fallback está permitido.
             if not status.personal_api_key or self.config.allow_system_fallback:
                 for k in self.config.system_keys:
                     keys_to_try.append(("system", k))
 
-        # 3. BUCLE DE EJECUCIÓN
         for key_type, key_value in keys_to_try:
-            # Bloqueo estricto por cuota del sistema
             if is_search and key_type == "system":
                 if status.daily_system_search_count >= self.config.daily_search_limit:
                     continue
@@ -214,24 +187,19 @@ class OpenAlexSource(BaseDataSource):
                 try:
                     response = await client.get(url, params=current_params)
                     
-                    # A) Monitorización de Salud (Para llaves personales)
                     remaining = int(response.headers.get("X-RateLimit-Remaining", 100000))
-                    # Si la llave no tiene créditos (429) o es inválida (401, 403), se "apaga"
                     if key_type == "personal" and (remaining <= 0 or response.status_code in (401, 403, 429)):
                         status.personal_key_active = False
                         self.status_db[self.user_id] = status.model_dump(mode="json")
                         continue
 
-                    # B) Éxito: Consumo de Cuota y Retorno
                     if response.status_code == 200:
                         if is_search and key_type == "system":
                             status.daily_system_search_count += 1
                             self.status_db[self.user_id] = status.model_dump(mode="json")
                         return response.json()
                     
-                    # C) Prevención del "Bucle Infinito" en 404
                     elif response.status_code == 404:
-                        # Si no existe en OpenAlex, no existirá con otra llave.
                         return None
                         
                 except Exception as e:
@@ -240,8 +208,10 @@ class OpenAlexSource(BaseDataSource):
         
         return None
     
-    
     def _extract_oa_url(self, data: dict) -> str:
+        """
+        Extracts the best available Open Access URL.
+        """
         oa_data = data.get("open_access", {})
         if not oa_data.get("is_oa"):
             return ""
@@ -288,7 +258,7 @@ class OpenAlexSource(BaseDataSource):
             authors=[a["author"]["display_name"] for a in data.get("authorships", [])],
             year=data.get("publication_year") or 0,
             file_size=0,
-            storage_uri=self._extract_oa_url(data), # Pasa el data puro
+            storage_uri=self._extract_oa_url(data),
             mime_type="application/pdf",
             file_extension=".pdf",
             source=self.name,
