@@ -1,11 +1,11 @@
 """
-API router for global document management and physical file operations.
+API router for global document management and physical asset serving.
 
-This module provides endpoints for retrieving the entire ingested library, 
-serving the physical PDF binaries to the client, and executing complex, 
-rule-based cleanup operations to manage disk quota and database integrity.
+This module provides endpoints for cataloging the ingested library, 
+streaming format-agnostic physical files to the client, and executing 
+rule-based cleanup operations to maintain storage quotas and referential 
+integrity within the BeaverDB databases.
 """
-
 import os
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -52,22 +52,25 @@ async def list_documents(
     docs_db = db.dict("global_documents")
     return [GlobalDocumentMeta.model_validate(data) for data in docs_db.values()]
 
-@router.get("/{doi:path}/pdf", response_class=FileResponse)
-async def get_document_pdf(
+@router.get("/{doi:path}/file", response_class=FileResponse)
+async def get_document_file(
     doi: str,
     user_id: str = Depends(get_current_user),
     db: BeaverDB = Depends(get_db)
 ) -> FileResponse:
     """
-    Streams the physical PDF binary file to the client for rendering.
+    Streams the physical binary file to the client for rendering or downloading.
+
+    This endpoint dynamically reads the registered MIME type from the metadata, 
+    ensuring the system remains completely agnostic to the file format (PDF, EPUB, XML).
 
     Args:
         doi: The target Digital Object Identifier.
-        user_id: The authenticated user's identifier, injected via dependencies.
-        db: The active BeaverDB connection instance, injected via dependencies.
+        user_id: The authenticated user's identifier.
+        db: The active BeaverDB connection instance.
 
     Returns:
-        FileResponse: The physical PDF file with appropriate media type headers.
+        FileResponse: The physical file with the exact media type headers required by the browser.
 
     Raises:
         HTTPException: A 404 error if the metadata is missing or the file is not on disk.
@@ -75,17 +78,17 @@ async def get_document_pdf(
     docs_db = db.dict("global_documents")
     
     if doi not in docs_db:
-        raise HTTPException(status_code=404, detail="Metadata record not found.")
+        raise HTTPException(status_code=404, detail="Document metadata not found.")
         
     doc_data = docs_db[doi]
     storage_uri = doc_data.get("storage_uri", "")
     
     if not os.path.exists(storage_uri):
-        raise HTTPException(status_code=404, detail="Binary asset missing on disk.")
+        raise HTTPException(status_code=404, detail="Physical file not found on disk.")
         
     return FileResponse(
         path=storage_uri, 
-        media_type=doc_data.get("mime_type", "application/pdf"),
+        media_type=doc_data.get("mime_type", "application/octet-stream"),
         filename=os.path.basename(storage_uri)
     )
 
@@ -98,10 +101,14 @@ async def delete_document(
     """
     Permanently removes a single document and purges all related references.
 
+    This operation enforces strict referential integrity by traversing all 
+    Knowledge Bases to remove pointers, deleting the physical file from 
+    the configured storage adapter, and dropping the semantic vector.
+
     Args:
         doi: The target Digital Object Identifier to delete.
-        user_id: The authenticated user's identifier, injected via dependencies.
-        db: The active BeaverDB connection instance, injected via dependencies.
+        user_id: The authenticated user's identifier.
+        db: The active BeaverDB connection instance.
 
     Returns:
         dict: A success confirmation message.
@@ -142,14 +149,15 @@ async def cleanup_documents(
     """
     Executes a bulk deletion of documents based on complex filtering criteria.
 
-    This operation strictly enforces referential integrity by sweeping all 
-    Knowledge Bases and removing pointers to the deleted documents before 
-    purging the physical files and semantic vectors.
+    This operation safely reclaims physical storage space by sweeping all 
+    Knowledge Bases, removing pointers to the deleted documents, and subsequently 
+    purging the physical files and semantic vectors based on the unlinked status 
+    or date thresholds.
 
     Args:
         payload: The filtering rules (date thresholds, linkage status, specific DOIs).
-        user_id: The authenticated user's identifier, injected via dependencies.
-        db: The active BeaverDB connection instance, injected via dependencies.
+        user_id: The authenticated user's identifier.
+        db: The active BeaverDB connection instance.
 
     Returns:
         CleanupResponse: A summary containing the number of deleted documents 

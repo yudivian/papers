@@ -142,7 +142,7 @@ def test_documents_pdf_stream_and_delete(api_env):
         
     db.dict("global_documents")["10.test/s"] = {"doi": "10.test/s", "title": "S", "year": 2024, "file_size": 8, "storage_uri": path}
 
-    assert client.get("/api/v1/documents/10.test/s/pdf").status_code == 200
+    assert client.get("/api/v1/documents/10.test/s/file").status_code == 200
     client.delete("/api/v1/documents/10.test/s")
     assert not os.path.exists(path)
 

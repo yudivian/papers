@@ -1,3 +1,11 @@
+"""
+Domain models and persistence schemas for the Papers AI Engine.
+
+This module defines the foundational data structures utilized across the 
+application. All classes inherit from Pydantic's BaseModel to enforce 
+strict type validation and facilitate seamless serialization to and from 
+the BeaverDB dictionary storage.
+"""
 from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional, Dict, Any
@@ -5,7 +13,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class DownloadStatus(str, Enum):
     """
-    Defines the discrete lifecycle stages of the asynchronous ingestion process.
+    Enumeration representing the discrete lifecycle stages of an ingestion task.
     """
     PENDING = "pending"
     DOWNLOADING = "downloading"
@@ -15,7 +23,10 @@ class DownloadStatus(str, Enum):
 
 class User(BaseModel):
     """
-    Persistence schema for researcher identity and resource management.
+    Entity representing a researcher within the system.
+
+    Used by the security and dependency injection layers to enforce 
+    logical storage quotas and track aggregated system usage.
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,7 +38,11 @@ class User(BaseModel):
 
 class KnowledgeBase(BaseModel):
     """
-    Logical grouping for research assets within a user workspace.
+    Logical grouping mechanism for research assets within a user workspace.
+
+    Utilizes a list-pointer pattern (document_ids) to associate documents 
+    with specific projects without duplicating the heavy global metadata 
+    records or the underlying physical files.
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,7 +59,11 @@ class KnowledgeBase(BaseModel):
 
 class GlobalDocumentMeta(BaseModel):
     """
-    The authoritative metadata record for an academic document.
+    The authoritative and format-agnostic metadata record for an academic document.
+
+    Stores verified bibliographic data and the internal storage URI. The source 
+    attribute defaults to 'unknown' to ensure neutrality when new data adapters 
+    are integrated into the ecosystem.
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,7 +75,7 @@ class GlobalDocumentMeta(BaseModel):
     storage_uri: str = Field(..., description="Internal path to the binary asset.")
     mime_type: str = Field(default="application/pdf", description="MIME media type of the asset.")
     file_extension: str = Field(default=".pdf", description="File extension of the asset.")
-    source: str = Field(default="openalex", description="Origin provider of the metadata.")
+    source: str = Field(default="unknown", description="Origin provider of the metadata.")
     abstract: Optional[str] = Field(None, description="Full reconstructed paper abstract.")
     keywords: List[str] = Field(default_factory=list, description="Extracted semantic concepts.")
     institutions: List[str] = Field(default_factory=list, description="Unique author affiliations.")
@@ -64,6 +83,9 @@ class GlobalDocumentMeta(BaseModel):
 class DownloadRequest(BaseModel):
     """
     Internal tracking record for asynchronous worker tasks.
+
+    Allows the frontend polling mechanism to retrieve the real-time status 
+    and error traces of ongoing document ingestion workloads.
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,7 +107,7 @@ class SearchQuery(BaseModel):
     
 class UserAdapterRegistry(BaseModel):
     """
-    Audit log of user-source interactions for lazy initialization.
+    Audit log of user-source interactions for lazy initialization strategies.
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -96,6 +118,9 @@ class UserAdapterRegistry(BaseModel):
 class OpenAlexUserStatus(BaseModel):
     """
     Detailed state management for the OpenAlex integration constraints.
+
+    Tracks the health of personal API keys and limits daily system-level 
+    text searches to prevent global rate-limiting.
     """
     model_config = ConfigDict(from_attributes=True)
 
