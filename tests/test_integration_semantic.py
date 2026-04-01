@@ -1,3 +1,6 @@
+"""
+Integration test suite for the semantic indexing pipeline.
+"""
 import os
 import shutil
 import tempfile
@@ -50,19 +53,19 @@ async def test_full_semantic_pipeline(integration_env):
     
     papers_data = {
         "10.000/ai": GlobalDocumentMeta(
-            doi="10.000/ai", 
-            title="Attention Is All You Need", 
-            year=2017, 
-            file_size=0, 
+            doi="10.000/ai",
+            title="Attention Is All You Need",
+            year=2017,
+            file_size=0,
             storage_uri="http://fake.url/1",
             abstract="Network architecture based solely on attention mechanisms.",
             keywords=["Transformers"]
         ),
         "10.000/med": GlobalDocumentMeta(
-            doi="10.000/med", 
-            title="Efficacy of Aspirin in Cardiology", 
-            year=2020, 
-            file_size=0, 
+            doi="10.000/med",
+            title="Efficacy of Aspirin in Cardiology",
+            year=2020,
+            file_size=0,
             storage_uri="http://fake.url/2",
             abstract="Clinical trial evaluating aspirin for preventing heart attacks.",
             keywords=["Medicine"]
@@ -73,7 +76,8 @@ async def test_full_semantic_pipeline(integration_env):
         return papers_data.get(doi)
         
     async def mock_download(*args, **kwargs):
-        return b"%PDF-1.4 Fake Data"
+        # AQUI LA CORRECCIÓN: Devolvemos tupla (bytes, mime_type)
+        return b"%PDF-1.4 Fake Data", "application/pdf"
 
     test_settings = Settings.load_from_yaml()
     test_settings.database.file = integration_env["db_path"]
@@ -101,8 +105,10 @@ async def test_full_semantic_pipeline(integration_env):
         db=test_db
     )
     
-    results = await cache_source.search_by_text("medical treatments", limit=1)
-    
-    assert len(results) > 0, "Semantic search returned empty."
-    assert results[0].doi == "10.000/med"
-    assert results[0].source == "cache"
+    results = await cache_source.search_by_text("neural networks and attention")
+    assert len(results) > 0
+    assert results[0].doi == "10.000/ai"
+
+    results_med = await cache_source.search_by_text("heart disease prevention")
+    assert len(results_med) > 0
+    assert results_med[0].doi == "10.000/med"

@@ -259,8 +259,6 @@ class OpenAlexSource(BaseDataSource):
             year=data.get("publication_year") or 0,
             file_size=0,
             storage_uri=self._extract_oa_url(data),
-            mime_type="application/pdf",
-            file_extension=".pdf",
             source=self.name,
             abstract=self._reconstruct_abstract(data.get("abstract_inverted_index")),
             keywords=[c["display_name"] for c in data.get("concepts", [])[:10]],

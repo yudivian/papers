@@ -1,8 +1,17 @@
+"""
+Background worker tasks for asynchronous document ingestion.
+
+This module isolates the heavy I/O bound operations (network downloading, 
+HTML parsing, and fallback strategies) and CPU bound operations (semantic 
+vector generation) from the main API thread. It ensures robust error 
+handling and dynamic MIME type inference to maintain a format-agnostic pipeline.
+"""
 import asyncio
 import httpx
 import re
 import logging
-from typing import Optional
+import mimetypes
+from typing import Optional, Tuple
 from castor import Manager
 from beaver import BeaverDB
 
@@ -24,9 +33,13 @@ def get_task_infrastructure():
 
 manager = Manager(BeaverDB(Settings.load_from_yaml().database.file))
 
-async def _download_asset(url: str, expected_mime: str) -> bytes:
+async def _download_asset(url: str, expected_mime: str) -> Tuple[bytes, str]:
     """
-    Retrieves and validates an academic asset with deep execution logging.
+    Retrieves an academic asset and dynamically resolves its true MIME type.
+
+    Employs a format-agnostic validation strategy. It strictly verifies PDF magic 
+    bytes only when a PDF is claimed, handles HTML meta-tag redirection, and 
+    natively accepts other arbitrary formats (EPUB, XML) based on server headers.
     """
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -39,7 +52,7 @@ async def _download_asset(url: str, expected_mime: str) -> bytes:
     for agent in user_agents:
         headers = {
             "User-Agent": agent,
-            "Accept": f"{expected_mime}, text/html, application/xhtml+xml;q=0.9, */*;q=0.8",
+            "Accept": f"{expected_mime}, text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
             "Connection": "keep-alive"
         }
@@ -49,22 +62,23 @@ async def _download_asset(url: str, expected_mime: str) -> bytes:
             async with httpx.AsyncClient(follow_redirects=True, headers=headers, verify=False) as client:
                 response = await client.get(url, timeout=45.0)
                 
-                logger.info(f"Received HTTP {response.status_code}. Content-Type: {response.headers.get('Content-Type', 'None')}")
+                raw_mime = response.headers.get("Content-Type", "application/octet-stream")
+                resolved_mime = raw_mime.split(";")[0].strip().lower()
+                logger.info(f"Received HTTP {response.status_code}. Content-Type: {resolved_mime}")
 
                 if response.status_code not in (200, 201, 202):
                     logger.warning(f"Unacceptable HTTP status {response.status_code}. Rotating agent.")
                     continue
 
-                content_type = response.headers.get("Content-Type", "").lower()
-                is_pdf = (expected_mime == "application/pdf")
+                if resolved_mime == "application/pdf":
+                    if b"%PDF" in response.content[:2048]:
+                        logger.info("Direct PDF binary signature verified.")
+                        return response.content, resolved_mime
+                    else:
+                        logger.warning("Payload claims to be PDF but lacks magic bytes.")
+                        continue
 
-                if is_pdf and b"%PDF" in response.content[:2048]:
-                    logger.info("Direct PDF binary signature verified.")
-                    return response.content
-                elif not is_pdf and expected_mime in content_type:
-                    return response.content
-
-                if "text/html" in content_type and is_pdf:
+                elif "text/html" in resolved_mime:
                     logger.info("HTML payload detected. Initiating metadata extraction heuristics.")
                     meta_pattern = r'<meta[^>]*citation_pdf_url[^>]*>'
                     match = re.search(meta_pattern, response.text, re.IGNORECASE)
@@ -82,16 +96,28 @@ async def _download_asset(url: str, expected_mime: str) -> bytes:
                             logger.info(f"Extracted secondary URI: {real_pdf_url}. Initiating download.")
                             pdf_res = await client.get(real_pdf_url, timeout=45.0)
                             
-                            logger.info(f"Secondary URI HTTP Status: {pdf_res.status_code}. Payload size: {len(pdf_res.content)} bytes.")
-                            if pdf_res.status_code == 200 and b"%PDF" in pdf_res.content[:2048]:
-                                logger.info("Secondary PDF binary signature verified.")
-                                return pdf_res.content
-                            else:
-                                logger.warning("Secondary payload failed magic byte validation.")
+                            sec_raw = pdf_res.headers.get("Content-Type", "application/octet-stream")
+                            sec_mime = sec_raw.split(";")[0].strip().lower()
+                            logger.info(f"Secondary URI HTTP Status: {pdf_res.status_code}. Content-Type: {sec_mime}")
+                            
+                            if pdf_res.status_code == 200:
+                                if sec_mime == "application/pdf":
+                                    if b"%PDF" in pdf_res.content[:2048]:
+                                        logger.info("Secondary PDF binary signature verified.")
+                                        return pdf_res.content, sec_mime
+                                    else:
+                                        logger.warning("Secondary payload claims PDF but lacks magic bytes.")
+                                else:
+                                    logger.info(f"Accepted secondary non-PDF payload natively: {sec_mime}")
+                                    return pdf_res.content, sec_mime
                         else:
                             logger.warning("Matched meta tag lacked a valid content attribute.")
                     else:
                         logger.warning("No citation_pdf_url meta tag present in the HTML structure.")
+                else:
+                    logger.info(f"Accepted non-HTML payload natively: {resolved_mime}")
+                    return response.content, resolved_mime
+
         except Exception as e:
             logger.error(f"Network subsystem failure: {type(e).__name__} - {str(e)}")
             continue
@@ -145,19 +171,29 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
             raise ValueError("Document metadata is restricted or unavailable.")
 
         try:
-            asset_bytes = await _download_asset(meta.storage_uri, meta.mime_type)
+            asset_bytes, final_mime = await _download_asset(meta.storage_uri, meta.mime_type)
         except ValueError as primary_err:
             logger.warning(f"Primary storage URI failed: {primary_err}")
             logger.info(f"Initiating generic DOI resolution fallback for {doi}...")
             fallback_url = f"https://doi.org/{doi}"
             
             if fallback_url != meta.storage_uri:
-                asset_bytes = await _download_asset(fallback_url, meta.mime_type)
+                asset_bytes, final_mime = await _download_asset(fallback_url, meta.mime_type)
             else:
                 raise primary_err
 
         if not asset_bytes:
             raise ValueError("Payload delivery failed or binary corrupted after all fallback attempts.")
+
+        meta.mime_type = final_mime
+        inferred_ext = mimetypes.guess_extension(final_mime)
+        
+        if final_mime == "application/pdf":
+            meta.file_extension = ".pdf"
+        elif inferred_ext:
+            meta.file_extension = inferred_ext
+        else:
+            meta.file_extension = ""
 
         storage = get_storage(settings.storage.selected, base_path=settings.storage.local.base_path)
         safe_filename = f"{doi.replace('/', '_')}{meta.file_extension}"
@@ -167,6 +203,7 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
         meta.file_size = len(asset_bytes)
         
         docs_db[doi] = meta.model_dump(mode="json")
+        
         if doi not in vectors_db:
             engine = SemanticEngine()
             text_context = engine.build_semantic_text(meta)
@@ -177,6 +214,7 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
                 "vector": vector,
                 "text_chunk": text_context 
             }
+            
         await _link_to_knowledge_base(doi, kb_id, kbs_db)
         
         if ticket_id in downloads_db:

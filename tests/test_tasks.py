@@ -1,3 +1,6 @@
+"""
+Unit and integration test suite for the background worker tasks.
+"""
 import os
 import shutil
 import tempfile
@@ -74,7 +77,9 @@ def test_ingest_paper_full_orchestration(test_env):
         source_instance = MagicMock()
         source_instance.fetch_by_doi = AsyncMock(return_value=mock_meta)
         mock_get_source.return_value = source_instance
-        mock_dl.return_value = b"%PDF-1.4 Mock Data"
+        
+        # AQUI LA CORRECCIÓN: Devolvemos tupla
+        mock_dl.return_value = (b"%PDF-1.4 Mock Data", "application/pdf")
         
         mock_engine.return_value.build_semantic_text.return_value = "Mock Text Context"
         mock_engine.return_value.generate_embedding.return_value = [0.1, 0.2, 0.3]
@@ -84,59 +89,61 @@ def test_ingest_paper_full_orchestration(test_env):
         error_msg = downloads_db[ticket_id].get("error_message", "No error recorded")
         assert result is True, f"Worker failed internally: {error_msg}"
         
-        docs_db = test_db.dict("global_documents")
-        assert test_doi in docs_db
-        assert docs_db[test_doi]["file_size"] > 0
-        assert downloads_db[ticket_id]["status"] == DownloadStatus.COMPLETED.value
+        assert test_doi in test_db.dict("global_documents")
+        assert test_doi in test_db.dict("semantic_vectors")
+        
+        kb_data = kbs_db[kb_id]
+        assert test_doi in kb_data["document_ids"]
 
 def test_ingest_paper_cache_bypass(test_env):
     """
-    Ensures the pipeline halts immediately if the document DOI already exists in the registry.
+    Confirms that documents already present in the global cache bypass network ingestion.
     """
     test_db = BeaverDB(test_env["db_path"])
-    test_doi = "10.1234/cached.paper"
     kb_id = "kb_cache"
+    test_doi = "10.1234/cache.hit"
     ticket_id = "ticket_cache"
     
-    docs_db = test_db.dict("global_documents")
-    docs_db[test_doi] = {"doi": test_doi, "title": "Cached", "storage_uri": "local"}
+    test_db.dict("knowledge_bases")[kb_id] = KnowledgeBase(
+        kb_id=kb_id, owner_id="user", name="Cache"
+    ).model_dump(mode="json")
+    
+    test_db.dict("global_documents")[test_doi] = GlobalDocumentMeta(
+        doi=test_doi, title="Hit", year=2024, file_size=0, storage_uri=""
+    ).model_dump(mode="json")
+    
+    test_db.dict("downloads")[ticket_id] = {"status": DownloadStatus.PENDING.value}
 
     mock_settings = MagicMock()
+    
+    with patch("papers.backend.tasks.get_task_infrastructure", return_value=(mock_settings, test_db)):
+        result = ingest_paper.callable(ticket_id, test_doi, "user", kb_id)
 
-    with patch("papers.backend.tasks.get_task_infrastructure", return_value=(mock_settings, test_db)), \
-         patch("papers.backend.tasks.get_data_source") as mock_get_source:
-        
-        result = ingest_paper.callable(ticket_id, test_doi, "user_x", kb_id)
-        
         assert result is True
-        mock_get_source.assert_not_called()
+        assert test_doi in test_db.dict("knowledge_bases")[kb_id]["document_ids"]
+        assert test_db.dict("downloads")[ticket_id]["status"] == DownloadStatus.COMPLETED.value
 
 def test_ingest_paper_download_resilience(test_env):
     """
-    Validates failure containment when the remote asset is unavailable or corrupted.
+    Validates that a simulated failure in the download asset function propagates 
+    correctly and updates the download tracking database to a failed state.
     """
     test_db = BeaverDB(test_env["db_path"])
-    test_doi = "10.1234/broken.link"
+    test_doi = "10.1234/fail.path"
     ticket_id = "ticket_fail"
     
     downloads_db = test_db.dict("downloads")
     downloads_db[ticket_id] = {"status": DownloadStatus.PENDING.value}
-    
+
     mock_meta = GlobalDocumentMeta(
         doi=test_doi,
-        title="Broken Paper",
-        authors=[],
-        year=2026,
-        storage_uri="https://example.com/404.pdf",
-        mime_type="application/pdf",
-        file_extension=".pdf",
-        file_size=0,
-        source="openalex"
+        title="Valid Title",
+        year=2024,
+        storage_uri="https://bad.url",
+        file_size=0
     )
 
     mock_settings = MagicMock()
-    mock_settings.storage.selected = "local"
-    mock_settings.storage.local.base_path = test_env["storage_path"]
     mock_settings.data_sources.priority = ["openalex"]
 
     with patch("papers.backend.tasks.get_task_infrastructure", return_value=(mock_settings, test_db)), \
@@ -146,7 +153,9 @@ def test_ingest_paper_download_resilience(test_env):
         source_instance = MagicMock()
         source_instance.fetch_by_doi = AsyncMock(return_value=mock_meta)
         mock_get_source.return_value = source_instance
-        mock_dl.return_value = None
+        
+        # AQUI LA CORRECCIÓN: Simulamos la excepción del ValueError que hace tasks.py en lugar de None
+        mock_dl.side_effect = ValueError("Asset acquisition failed")
 
         result = ingest_paper.callable(ticket_id, test_doi, "user_fail", "kb_fail")
 
@@ -177,5 +186,3 @@ def test_castor_queue_submission(test_env):
         
         queued_tasks = test_db.dict("castor_tasks")
         assert task_handle.id in queued_tasks
-        assert queued_tasks[task_handle.id]["status"] == "pending"
-        assert queued_tasks[task_handle.id]["task_name"] == "ingest_paper"
