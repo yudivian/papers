@@ -1,20 +1,23 @@
 """
-API router for global document management and physical asset serving.
+API router for global document management and physical file operations.
 
-This module provides endpoints for cataloging the ingested library, 
-streaming format-agnostic physical files to the client dynamically, 
-and executing rule-based cleanup operations to maintain storage quotas.
+This module exposes endpoints for retrieving the library catalog, streaming 
+format-agnostic physical files, and executing cleanup routines. It delegates 
+all physical I/O constraints to the injected storage adapters, avoiding 
+direct host operating system bindings.
 """
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 from beaver import BeaverDB
 
-from papers.backend.deps import get_current_user, get_db
+from papers.backend.deps import get_current_user, get_db, get_settings
 from papers.backend.models import GlobalDocumentMeta
+from papers.backend.config import Settings
+from papers.backend.storages import get_storage
 
 router = APIRouter()
 
@@ -40,39 +43,19 @@ async def list_documents(
 ) -> List[GlobalDocumentMeta]:
     """
     Retrieves the complete catalog of all documents ingested by the system.
-
-    Args:
-        user_id: The authenticated user's identifier.
-        db: The active BeaverDB connection instance.
-
-    Returns:
-        List[GlobalDocumentMeta]: A list containing metadata for every stored document.
     """
     docs_db = db.dict("global_documents")
     return [GlobalDocumentMeta.model_validate(data) for data in docs_db.values()]
 
-@router.get("/{doi:path}/file", response_class=FileResponse)
+@router.get("/{doi:path}/file", response_class=Response)
 async def get_document_file(
     doi: str,
     user_id: str = Depends(get_current_user),
-    db: BeaverDB = Depends(get_db)
-) -> FileResponse:
+    db: BeaverDB = Depends(get_db),
+    settings: Settings = Depends(get_settings)
+) -> Response:
     """
-    Streams the physical binary file to the client for rendering or downloading.
-
-    This endpoint dynamically reads the registered MIME type from the metadata, 
-    ensuring the system remains completely agnostic to the file format (e.g., PDF, EPUB).
-
-    Args:
-        doi: The target Digital Object Identifier.
-        user_id: The authenticated user's identifier.
-        db: The active BeaverDB connection instance.
-
-    Returns:
-        FileResponse: The physical file with the exact media type headers.
-
-    Raises:
-        HTTPException: A 404 error if the metadata is missing or the file is not on disk.
+    Streams the physical binary file to the client dynamically.
     """
     docs_db = db.dict("global_documents")
     
@@ -82,34 +65,25 @@ async def get_document_file(
     doc_data = docs_db[doi]
     storage_uri = doc_data.get("storage_uri", "")
     
-    if not os.path.exists(storage_uri):
-        raise HTTPException(status_code=404, detail="Physical file not found on disk.")
+    storage = get_storage(settings.storage.selected, base_path=settings.storage.local.base_path)
+    
+    if not await storage.exists(storage_uri):
+        raise HTTPException(status_code=404, detail="Physical file not found in storage.")
         
-    return FileResponse(
-        path=storage_uri, 
-        media_type=doc_data.get("mime_type", "application/octet-stream"),
-        filename=os.path.basename(storage_uri)
-    )
+    filename = os.path.basename(storage_uri)
+    media_type = doc_data.get("mime_type", "application/octet-stream")
+    
+    return await storage.serve(storage_uri, media_type, filename)
 
 @router.delete("/{doi:path}")
 async def delete_document(
     doi: str,
     user_id: str = Depends(get_current_user),
-    db: BeaverDB = Depends(get_db)
+    db: BeaverDB = Depends(get_db),
+    settings: Settings = Depends(get_settings)
 ) -> dict:
     """
     Permanently removes a single document and purges all related references.
-
-    Args:
-        doi: The target Digital Object Identifier to delete.
-        user_id: The authenticated user's identifier.
-        db: The active BeaverDB connection instance.
-
-    Returns:
-        dict: A success confirmation message.
-
-    Raises:
-        HTTPException: A 404 error if the document does not exist.
     """
     docs_db = db.dict("global_documents")
     if doi not in docs_db:
@@ -124,8 +98,10 @@ async def delete_document(
             kbs_db[kb_id] = kb_data
 
     storage_uri = docs_db[doi].get("storage_uri", "")
-    if os.path.exists(storage_uri):
-        os.remove(storage_uri)
+    storage = get_storage(settings.storage.selected, base_path=settings.storage.local.base_path)
+    
+    if await storage.exists(storage_uri):
+        await storage.delete(storage_uri)
 
     vectors_db = db.dict("semantic_vectors")
     if doi in vectors_db:
@@ -139,23 +115,17 @@ async def delete_document(
 async def cleanup_documents(
     payload: CleanupRequest,
     user_id: str = Depends(get_current_user),
-    db: BeaverDB = Depends(get_db)
+    db: BeaverDB = Depends(get_db),
+    settings: Settings = Depends(get_settings)
 ) -> CleanupResponse:
     """
     Executes a bulk deletion of documents based on complex filtering criteria.
-
-    Args:
-        payload: The filtering rules (date thresholds, linkage status, specific DOIs).
-        user_id: The authenticated user's identifier.
-        db: The active BeaverDB connection instance.
-
-    Returns:
-        CleanupResponse: A summary containing the number of deleted documents 
-                         and the total bytes freed from the storage disk.
     """
     docs_db = db.dict("global_documents")
     kbs_db = db.dict("knowledge_bases")
     vectors_db = db.dict("semantic_vectors")
+    
+    storage = get_storage(settings.storage.selected, base_path=settings.storage.local.base_path)
 
     linked_dois = set()
     for kb_data in kbs_db.values():
@@ -171,8 +141,8 @@ async def cleanup_documents(
 
         if payload.before_date:
             storage_uri = doc_data.get("storage_uri", "")
-            if os.path.exists(storage_uri):
-                mtime = datetime.fromtimestamp(os.path.getmtime(storage_uri), tz=timezone.utc)
+            if await storage.exists(storage_uri):
+                mtime = await storage.get_modified_time(storage_uri)
                 if mtime > payload.before_date:
                     continue
 
@@ -190,9 +160,10 @@ async def cleanup_documents(
 
         doc_data = docs_db[doi]
         storage_uri = doc_data.get("storage_uri", "")
-        if os.path.exists(storage_uri):
-            freed_bytes += os.path.getsize(storage_uri)
-            os.remove(storage_uri)
+        
+        if await storage.exists(storage_uri):
+            freed_bytes += await storage.get_size(storage_uri)
+            await storage.delete(storage_uri)
 
         if doi in vectors_db:
             del vectors_db[doi]

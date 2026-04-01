@@ -1,17 +1,24 @@
+"""
+Extensible storage layer for the Papers AI Engine.
+
+This module provides the abstract interfaces and registry patterns necessary 
+to decouple physical file persistence from the application's business logic. 
+By delegating all file system operations (saving, deleting, verifying, and serving) 
+to registered adapters, the system seamlessly supports local disk storage, 
+cloud buckets (e.g., AWS S3), and distributed file systems.
+"""
 import os
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import Dict, Type
 from anyio import Path
+from fastapi.responses import Response, FileResponse
 
 _STORAGES: Dict[str, Type["BaseStorage"]] = {}
 
 def register_storage(cls: Type["BaseStorage"]) -> Type["BaseStorage"]:
     """
     Registry decorator that maps a storage class to its unique name identifier.
-
-    This enables the factory to resolve and instantiate the correct storage 
-    adapter based on external configuration strings without modifying the 
-    core orchestration logic.
     """
     _STORAGES[cls.name] = cls
     return cls
@@ -19,12 +26,6 @@ def register_storage(cls: Type["BaseStorage"]) -> Type["BaseStorage"]:
 def get_storage(name: str, **kwargs) -> "BaseStorage":
     """
     Factory function to retrieve a specific storage adapter instance.
-
-    It looks up the requested name in the global registry and passes 
-    any additional keyword arguments to the adapter's constructor.
-
-    Raises:
-        ValueError: If the requested storage name is not registered.
     """
     if name not in _STORAGES:
         raise ValueError(f"Unknown storage adapter: '{name}'")
@@ -33,53 +34,44 @@ def get_storage(name: str, **kwargs) -> "BaseStorage":
 class BaseStorage(ABC):
     """
     Abstract base class defining the contract for all persistent storage layers.
-
-    Any implementation must provide asynchronous methods for basic file 
-    operations to ensure non-blocking I/O across the application.
     """
     name: str
 
     @abstractmethod
     async def save(self, relative_path: str, data: bytes) -> str:
-        """
-        Persists raw bytes into the storage backend.
-
-        Returns:
-            A string representing the absolute URI or path to the stored resource.
-        """
         pass
 
     @abstractmethod
     async def read(self, uri: str) -> bytes:
-        """
-        Retrieves the binary content of a file located at the given URI.
-        """
         pass
-        
+
     @abstractmethod
     async def delete(self, uri: str) -> bool:
-        """
-        Removes a file from the storage system.
-
-        Returns:
-            True if the operation succeeded, False otherwise.
-        """
         pass
 
     @abstractmethod
     async def exists(self, uri: str) -> bool:
+        pass
+
+    @abstractmethod
+    async def get_size(self, uri: str) -> int:
+        pass
+
+    @abstractmethod
+    async def get_modified_time(self, uri: str) -> datetime:
+        pass
+
+    @abstractmethod
+    async def serve(self, uri: str, media_type: str, filename: str) -> Response:
         """
-        Determines if a resource currently exists at the specified URI.
+        Constructs an appropriate HTTP response for serving the file to the client.
         """
         pass
 
 @register_storage
 class LocalStorage(BaseStorage):
     """
-    Storage adapter for the local host file system.
-
-    It utilizes 'anyio' for asynchronous path operations, ensuring that 
-    the event loop is not blocked during disk I/O.
+    Storage adapter for the local host file system using asynchronous I/O.
     """
     name = "local"
 
@@ -87,9 +79,6 @@ class LocalStorage(BaseStorage):
         self.base_path = Path(base_path)
 
     async def _ensure_dir(self, target_path: Path):
-        """
-        Recursively creates the parent directories for a given file path.
-        """
         await target_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def save(self, relative_path: str, data: bytes) -> str:
@@ -116,5 +105,21 @@ class LocalStorage(BaseStorage):
         return False
 
     async def exists(self, uri: str) -> bool:
-        target = Path(uri)
-        return await target.exists()
+        return await Path(uri).exists()
+
+    async def get_size(self, uri: str) -> int:
+        stat = await Path(uri).stat()
+        return stat.st_size
+
+    async def get_modified_time(self, uri: str) -> datetime:
+        stat = await Path(uri).stat()
+        return datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+
+    async def serve(self, uri: str, media_type: str, filename: str) -> Response:
+        if not await self.exists(uri):
+            raise FileNotFoundError(f"File not found at URI: {uri}")
+        return FileResponse(
+            path=uri,
+            media_type=media_type,
+            filename=filename
+        )

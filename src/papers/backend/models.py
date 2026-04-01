@@ -73,8 +73,8 @@ class GlobalDocumentMeta(BaseModel):
     year: int
     file_size: int = Field(..., description="Validated physical file size in bytes.")
     storage_uri: str = Field(..., description="Internal path to the binary asset.")
-    mime_type: str = Field(default="application/pdf", description="MIME media type of the asset.")
-    file_extension: str = Field(default=".pdf", description="File extension of the asset.")
+    mime_type: str = Field(default="application/octet-stream", description="MIME media type of the asset.")
+    file_extension: str = Field(default="", description="File extension of the asset.")
     source: str = Field(default="unknown", description="Origin provider of the metadata.")
     abstract: Optional[str] = Field(None, description="Full reconstructed paper abstract.")
     keywords: List[str] = Field(default_factory=list, description="Extracted semantic concepts.")

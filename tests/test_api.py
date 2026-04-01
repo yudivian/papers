@@ -2,9 +2,8 @@
 Integration test suite for the primary FastAPI application router.
 
 This module validates the integration between HTTP endpoints and the underlying 
-BeaverDB storage layer. It employs dependency overrides to bypass authentication 
-and isolate the database state, ensuring deterministic evaluations of CRUD 
-operations, permission boundaries, and payload streaming.
+BeaverDB storage layer. It employs dependency overrides to bypass authentication, 
+isolate the database state, and mock application configurations.
 """
 import os
 import pytest
@@ -13,8 +12,9 @@ from unittest.mock import patch, AsyncMock
 from beaver import BeaverDB
 
 from papers.backend.main import app
-from papers.backend.deps import get_db, get_current_user
+from papers.backend.deps import get_db, get_current_user, get_settings
 from papers.backend.models import DownloadStatus, GlobalDocumentMeta
+from papers.backend.config import Settings
 
 client = TestClient(app)
 
@@ -29,8 +29,12 @@ def api_env(tmp_path):
     
     test_db = BeaverDB(str(db_path))
 
+    test_settings = Settings.load_from_yaml()
+    test_settings.storage.local.base_path = str(storage_path)
+
     app.dependency_overrides[get_db] = lambda: test_db
     app.dependency_overrides[get_current_user] = lambda: "authorized_test_user"
+    app.dependency_overrides[get_settings] = lambda: test_settings
 
     yield {
         "db": test_db,

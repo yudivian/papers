@@ -1,8 +1,17 @@
+"""
+Test suite for the extensible storage layer.
+
+Validates the registry pattern, local file system operations, and security 
+constraints such as directory traversal prevention. Ensures full coverage 
+of the BaseStorage interface implementation.
+"""
 import pytest
 import os
 import shutil
 import tempfile
+from datetime import datetime
 from anyio import Path
+from fastapi.responses import FileResponse
 from papers.backend.storages import get_storage, LocalStorage
 
 @pytest.fixture
@@ -87,7 +96,27 @@ async def test_local_storage_read_non_existent_file(temp_storage_dir):
     standard FileNotFoundError.
     """
     storage = get_storage("local", base_path=temp_storage_dir)
-    invalid_uri = os.path.join(temp_storage_dir, "ghost.pdf")
-    
     with pytest.raises(FileNotFoundError):
-        await storage.read(invalid_uri)
+        await storage.read("/invalid/path/file.pdf")
+
+@pytest.mark.anyio
+async def test_local_storage_extended_metadata(temp_storage_dir):
+    """
+    Validates the correct resolution of file sizes, modification timestamps, 
+    and response formatting to ensure compliance with the expanded BaseStorage contract.
+    """
+    storage = get_storage("local", base_path=temp_storage_dir)
+    filename = "metadata_test.epub"
+    content = b"EPUB DUMMY PAYLOAD"
+    
+    uri = await storage.save(filename, content)
+    
+    size = await storage.get_size(uri)
+    assert size == len(content)
+    
+    mtime = await storage.get_modified_time(uri)
+    assert isinstance(mtime, datetime)
+    
+    response = await storage.serve(uri, "application/epub+zip", "test.epub")
+    assert isinstance(response, FileResponse)
+    assert response.media_type == "application/epub+zip"
