@@ -50,6 +50,8 @@ def test_ingest_paper_full_orchestration(test_env):
         authors=["Author A"],
         year=2026,
         storage_uri="https://example.com/paper.pdf",
+        mime_type="application/pdf",
+        file_extension=".pdf",
         file_size=0,
         source="openalex"
     )
@@ -58,7 +60,7 @@ def test_ingest_paper_full_orchestration(test_env):
          patch("papers.backend.tasks.settings") as mock_settings, \
          patch("papers.backend.tasks.get_data_source") as mock_get_source, \
          patch("papers.backend.tasks._download_asset", new_callable=AsyncMock) as mock_dl, \
-         patch("papers.backend.tasks.SemanticEngine") as mock_engine: # <-- MOCK DEL MOTOR DE IA
+         patch("papers.backend.tasks.SemanticEngine") as mock_engine:
 
         mock_settings.storage.selected = "local"
         mock_settings.storage.local.base_path = test_env["storage_path"]
@@ -70,13 +72,11 @@ def test_ingest_paper_full_orchestration(test_env):
         mock_get_source.return_value = source_instance
         mock_dl.return_value = b"%PDF-1.4 Mock Data"
         
-        # Le decimos al mock que devuelva datos falsos rápido sin usar CPU/Red
         mock_engine.return_value.build_semantic_text.return_value = "Mock Text Context"
         mock_engine.return_value.generate_embedding.return_value = [0.1, 0.2, 0.3]
 
         result = ingest_paper.callable(ticket_id, test_doi, user_id, kb_id)
 
-        # Si falla, imprimimos el error exacto que la base de datos capturó
         error_msg = downloads_db[ticket_id].get("error_message", "No error recorded")
         assert result is True, f"Worker fail internally: {error_msg}"
         
@@ -123,6 +123,8 @@ def test_ingest_paper_download_resilience(test_env):
         authors=[],
         year=2026,
         storage_uri="https://example.com/404.pdf",
+        mime_type="application/pdf",
+        file_extension=".pdf",
         file_size=0,
         source="openalex"
     )
@@ -160,7 +162,7 @@ def test_castor_queue_submission(test_env):
         manager._scheduled_tasks = test_db.queue("castor_scheduled_tasks")
         
         task_handle = ingest_paper.submit(
-            ticket_id="ticket_queue", # ¡Añadido!
+            ticket_id="ticket_queue",
             doi="10.1234/queue.test", 
             user_id="user_q", 
             kb_id="kb_q"
