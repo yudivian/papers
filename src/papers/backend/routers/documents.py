@@ -2,9 +2,8 @@
 API router for global document management and physical asset serving.
 
 This module provides endpoints for cataloging the ingested library, 
-streaming format-agnostic physical files to the client, and executing 
-rule-based cleanup operations to maintain storage quotas and referential 
-integrity within the BeaverDB databases.
+streaming format-agnostic physical files to the client dynamically, 
+and executing rule-based cleanup operations to maintain storage quotas.
 """
 import os
 from datetime import datetime, timezone
@@ -43,11 +42,11 @@ async def list_documents(
     Retrieves the complete catalog of all documents ingested by the system.
 
     Args:
-        user_id: The authenticated user's identifier, injected via dependencies.
-        db: The active BeaverDB connection instance, injected via dependencies.
+        user_id: The authenticated user's identifier.
+        db: The active BeaverDB connection instance.
 
     Returns:
-        List[GlobalDocumentMeta]: A list containing the metadata for every stored document.
+        List[GlobalDocumentMeta]: A list containing metadata for every stored document.
     """
     docs_db = db.dict("global_documents")
     return [GlobalDocumentMeta.model_validate(data) for data in docs_db.values()]
@@ -62,7 +61,7 @@ async def get_document_file(
     Streams the physical binary file to the client for rendering or downloading.
 
     This endpoint dynamically reads the registered MIME type from the metadata, 
-    ensuring the system remains completely agnostic to the file format (PDF, EPUB, XML).
+    ensuring the system remains completely agnostic to the file format (e.g., PDF, EPUB).
 
     Args:
         doi: The target Digital Object Identifier.
@@ -70,7 +69,7 @@ async def get_document_file(
         db: The active BeaverDB connection instance.
 
     Returns:
-        FileResponse: The physical file with the exact media type headers required by the browser.
+        FileResponse: The physical file with the exact media type headers.
 
     Raises:
         HTTPException: A 404 error if the metadata is missing or the file is not on disk.
@@ -100,10 +99,6 @@ async def delete_document(
 ) -> dict:
     """
     Permanently removes a single document and purges all related references.
-
-    This operation enforces strict referential integrity by traversing all 
-    Knowledge Bases to remove pointers, deleting the physical file from 
-    the configured storage adapter, and dropping the semantic vector.
 
     Args:
         doi: The target Digital Object Identifier to delete.
@@ -148,11 +143,6 @@ async def cleanup_documents(
 ) -> CleanupResponse:
     """
     Executes a bulk deletion of documents based on complex filtering criteria.
-
-    This operation safely reclaims physical storage space by sweeping all 
-    Knowledge Bases, removing pointers to the deleted documents, and subsequently 
-    purging the physical files and semantic vectors based on the unlinked status 
-    or date thresholds.
 
     Args:
         payload: The filtering rules (date thresholds, linkage status, specific DOIs).

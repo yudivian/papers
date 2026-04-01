@@ -1,3 +1,11 @@
+"""
+Integration test suite for the primary FastAPI application router.
+
+This module validates the integration between HTTP endpoints and the underlying 
+BeaverDB storage layer. It employs dependency overrides to bypass authentication 
+and isolate the database state, ensuring deterministic evaluations of CRUD 
+operations, permission boundaries, and payload streaming.
+"""
 import os
 import pytest
 from fastapi.testclient import TestClient
@@ -16,7 +24,7 @@ def api_env(tmp_path):
     Provisions an isolated testing environment with dependency overrides.
     """
     db_path = tmp_path / "test.db"
-    storage_path = tmp_path / "pdfs"
+    storage_path = tmp_path / "files"
     storage_path.mkdir()
     
     test_db = BeaverDB(str(db_path))
@@ -62,15 +70,15 @@ def test_documents_deep_cleanup(api_env):
     db = api_env["db"]
     storage = api_env["storage_path"]
     
-    linked_file = os.path.join(storage, "linked.pdf")
-    unlinked_file = os.path.join(storage, "unlinked.pdf")
+    linked_file = os.path.join(storage, "linked.dat")
+    unlinked_file = os.path.join(storage, "unlinked.dat")
     
     with open(linked_file, 'w') as f: f.write("content")
     with open(unlinked_file, 'w') as f: f.write("content")
 
     docs_db = db.dict("global_documents")
-    docs_db["10.test/linked"] = {"doi": "10.test/linked", "title": "L", "year": 2024, "file_size": 7, "storage_uri": linked_file}
-    docs_db["10.test/unlinked"] = {"doi": "10.test/unlinked", "title": "U", "year": 2024, "file_size": 7, "storage_uri": unlinked_file}
+    docs_db["10.test/linked"] = {"doi": "10.test/linked", "title": "L", "year": 2024, "file_size": 7, "storage_uri": linked_file, "mime_type": "application/octet-stream"}
+    docs_db["10.test/unlinked"] = {"doi": "10.test/unlinked", "title": "U", "year": 2024, "file_size": 7, "storage_uri": unlinked_file, "mime_type": "application/octet-stream"}
 
     kb_res = client.post("/api/v1/kbs", json={"name": "P", "description": ""})
     kbs_db = db.dict("knowledge_bases")
@@ -111,11 +119,11 @@ def test_health_and_users_real_quota(api_env):
     db = api_env["db"]
     storage = api_env["storage_path"]
     
-    test_file = os.path.join(storage, "quota.pdf")
+    test_file = os.path.join(storage, "quota.dat")
     with open(test_file, 'wb') as f: f.write(b"DATA")
         
     docs_db = db.dict("global_documents")
-    docs_db["10.test/q"] = {"doi": "10.test/q", "title": "Q", "year": 2024, "file_size": 4, "storage_uri": test_file}
+    docs_db["10.test/q"] = {"doi": "10.test/q", "title": "Q", "year": 2024, "file_size": 4, "storage_uri": test_file, "mime_type": "application/octet-stream"}
 
     profile = client.get("/api/v1/users/me").json()
     assert profile["quota"]["used_bytes"] == 4
@@ -131,16 +139,23 @@ def test_ingestion_async_flow(mock_ingest, api_env):
     mock_ingest.submit.assert_called_once()
     assert client.get(f"/api/v1/ingestion/status/{ticket_id}").status_code == 200
 
-def test_documents_pdf_stream_and_delete(api_env):
+def test_documents_file_stream_and_delete(api_env):
     """
-    Confirms physical asset delivery and purge consistency.
+    Confirms format-agnostic physical asset delivery and purge consistency.
     """
     db = api_env["db"]
     storage = api_env["storage_path"]
-    path = os.path.join(storage, "s.pdf")
-    with open(path, 'wb') as f: f.write(b"%PDF-1.4")
+    path = os.path.join(storage, "s.epub")
+    with open(path, 'wb') as f: f.write(b"EPUB DATA")
         
-    db.dict("global_documents")["10.test/s"] = {"doi": "10.test/s", "title": "S", "year": 2024, "file_size": 8, "storage_uri": path}
+    db.dict("global_documents")["10.test/s"] = {
+        "doi": "10.test/s", 
+        "title": "S", 
+        "year": 2024, 
+        "file_size": 9, 
+        "storage_uri": path,
+        "mime_type": "application/epub+zip"
+    }
 
     assert client.get("/api/v1/documents/10.test/s/file").status_code == 200
     client.delete("/api/v1/documents/10.test/s")
