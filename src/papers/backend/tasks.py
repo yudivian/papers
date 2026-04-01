@@ -1,23 +1,7 @@
-"""
-Core asynchronous task orchestration module for the document ingestion pipeline.
-
-This module acts as the boundary between the synchronous Castor task queue and 
-the highly concurrent, I/O-bound operations required to fetch, process, and 
-store academic papers. It enforces a strict state machine for tracking download 
-progress via the `DownloadRequest` model, ensuring the frontend can poll for 
-real-time updates without directly querying the task queue infrastructure.
-
-State Machine Flow:
-    1. Caller inserts DownloadRequest (PENDING) and submits the Castor task.
-    2. Worker picks up task -> Transitions ticket to DOWNLOADING.
-    3. Pipeline resolves metadata and downloads physical PDF binary.
-    4. On success -> Transitions ticket to COMPLETED, creates GlobalDocumentMeta.
-    5. On failure -> Transitions ticket to FAILED, records error payload.
-"""
-
 import asyncio
 import httpx
 import re
+import logging
 from typing import Optional
 from castor import Manager
 from beaver import BeaverDB
@@ -28,95 +12,95 @@ from papers.backend.data_sources import get_data_source
 from papers.backend.storages import get_storage
 from papers.backend.search import SemanticEngine
 
-settings = Settings.load_from_yaml()
-db = BeaverDB(settings.database.file)
-manager = Manager(db)
+logger = logging.getLogger(__name__)
 
-async def _download_asset(url: str, expected_mime: str) -> Optional[bytes]:
+def get_task_infrastructure():
     """
-    Executes a fortified, asynchronous HTTP GET request to retrieve PDF binaries.
-
-    This function implements specific evasion heuristics and payload validation 
-    to navigate the complexities of academic web scraping. It actively rewrites 
-    known HTML landing page URLs into their direct PDF endpoints (e.g., Arxiv) 
-    and spoofs standard browser User-Agents to bypass rudimentary 403 Forbidden 
-    blocks from major publishers. 
-
-    Furthermore, it enforces binary integrity by reading the magic bytes of the 
-    response payload, discarding payloads that return HTTP 200 OK but contain 
-    Captchas, paywall HTMLs, or proxy errors.
-
-    Args:
-        url: The candidate storage URI provided by the metadata resolution phase.
-        doi: The Digital Object Identifier used to infer repository heuristics.
-
-    Returns:
-        Optional[bytes]: The raw, validated PDF byte sequence if successful; 
-                         None if the network times out, the server blocks the 
-                         request, or the payload fails binary validation.
+    Bootstraps the required infrastructure within the worker execution context.
     """
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": f"{expected_mime}, text/html;q=0.9"
-    }
+    settings = Settings.load_from_yaml()
+    db = BeaverDB(settings.database.file)
+    return settings, db
 
-    async with httpx.AsyncClient(follow_redirects=True, headers=headers) as client:
+manager = Manager(BeaverDB(Settings.load_from_yaml().database.file))
+
+async def _download_asset(url: str, expected_mime: str) -> bytes:
+    """
+    Retrieves and validates an academic asset with deep execution logging.
+    """
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "curl/7.88.1",
+        "Wget/1.21.2"
+    ]
+
+    logger.info(f"Starting asset acquisition sequence for URI: {url}")
+
+    for agent in user_agents:
+        headers = {
+            "User-Agent": agent,
+            "Accept": f"{expected_mime}, text/html, application/xhtml+xml;q=0.9, */*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Connection": "keep-alive"
+        }
+
         try:
-            response = await client.get(url, timeout=30.0)
-            
-            if response.status_code != 200:
-                return None
-
-            content_type = response.headers.get("Content-Type", "").lower()
-
-            # CASO 1: Es el binario directamente (Acierto directo)
-            if expected_mime == "application/pdf":
-                if response.content.startswith(b"%PDF"):
-                    return response.content
-            elif expected_mime in content_type:
-                return response.content
-
-            # CASO 2: Heurística General de Metaetiquetas Académicas
-            # Si nos dieron un HTML pero buscábamos un PDF, buscamos el estándar de Google Scholar
-            if "text/html" in content_type and expected_mime == "application/pdf":
-                # Buscamos <meta name="citation_pdf_url" content="LA_URL_REAL">
-                match = re.search(
-                    r'<meta\s+(?:name|property)\s*=\s*["\']citation_pdf_url["\']\s+content\s*=\s*["\']([^"\']+)["\']', 
-                    response.text, 
-                    re.IGNORECASE
-                )
+            logger.info(f"Attempting connection with User-Agent: {agent[:15]}...")
+            async with httpx.AsyncClient(follow_redirects=True, headers=headers, verify=False) as client:
+                response = await client.get(url, timeout=45.0)
                 
-                if match:
-                    real_pdf_url = match.group(1)
-                    
-                    # Manejar URLs relativas por si acaso (ej. content="/pdf/123.pdf")
-                    if real_pdf_url.startswith("/"):
-                        parsed_base = httpx.URL(url)
-                        real_pdf_url = f"{parsed_base.scheme}://{parsed_base.host}{real_pdf_url}"
-                        
-                    # Segunda petición a la URL real descubierta
-                    pdf_response = await client.get(real_pdf_url, timeout=30.0)
-                    if pdf_response.status_code == 200 and pdf_response.content.startswith(b"%PDF"):
-                        return pdf_response.content
+                logger.info(f"Received HTTP {response.status_code}. Content-Type: {response.headers.get('Content-Type', 'None')}")
 
-        except httpx.HTTPError:
-            pass
-            
-    return None
+                if response.status_code not in (200, 201, 202):
+                    logger.warning(f"Unacceptable HTTP status {response.status_code}. Rotating agent.")
+                    continue
+
+                content_type = response.headers.get("Content-Type", "").lower()
+                is_pdf = (expected_mime == "application/pdf")
+
+                if is_pdf and b"%PDF" in response.content[:2048]:
+                    logger.info("Direct PDF binary signature verified.")
+                    return response.content
+                elif not is_pdf and expected_mime in content_type:
+                    return response.content
+
+                if "text/html" in content_type and is_pdf:
+                    logger.info("HTML payload detected. Initiating metadata extraction heuristics.")
+                    meta_pattern = r'<meta[^>]*citation_pdf_url[^>]*>'
+                    match = re.search(meta_pattern, response.text, re.IGNORECASE)
+                    
+                    if match:
+                        meta_tag = match.group(0)
+                        content_match = re.search(r'content\s*=\s*["\']([^"\']+)["\']', meta_tag, re.IGNORECASE)
+                        
+                        if content_match:
+                            real_pdf_url = content_match.group(1)
+                            if real_pdf_url.startswith("/"):
+                                parsed_base = httpx.URL(url)
+                                real_pdf_url = f"{parsed_base.scheme}://{parsed_base.host}{real_pdf_url}"
+                                
+                            logger.info(f"Extracted secondary URI: {real_pdf_url}. Initiating download.")
+                            pdf_res = await client.get(real_pdf_url, timeout=45.0)
+                            
+                            logger.info(f"Secondary URI HTTP Status: {pdf_res.status_code}. Payload size: {len(pdf_res.content)} bytes.")
+                            if pdf_res.status_code == 200 and b"%PDF" in pdf_res.content[:2048]:
+                                logger.info("Secondary PDF binary signature verified.")
+                                return pdf_res.content
+                            else:
+                                logger.warning("Secondary payload failed magic byte validation.")
+                        else:
+                            logger.warning("Matched meta tag lacked a valid content attribute.")
+                    else:
+                        logger.warning("No citation_pdf_url meta tag present in the HTML structure.")
+        except Exception as e:
+            logger.error(f"Network subsystem failure: {type(e).__name__} - {str(e)}")
+            continue
+
+    raise ValueError(f"Asset acquisition failed for {url} across all agent strategies.")
 
 async def _link_to_knowledge_base(doi: str, kb_id: str, kbs_db: dict) -> None:
     """
-    Establishes a logical association between a global document and a user project.
-
-    This operation is designed to be idempotent. It safely modifies the list of 
-    document identifiers within a specific Knowledge Base record, preventing 
-    duplicate associations if the linkage is triggered multiple times due to 
-    cache hits or task retries.
-
-    Args:
-        doi: The unique Digital Object Identifier of the ingested document.
-        kb_id: The target identifier of the user's Knowledge Base.
-        kbs_db: The injected BeaverDB dictionary reference for the kbs collection.
+    Registers a document DOI within a specific knowledge base project.
     """
     if kb_id in kbs_db:
         kb_data = kbs_db[kb_id]
@@ -128,29 +112,9 @@ async def _link_to_knowledge_base(doi: str, kb_id: str, kbs_db: dict) -> None:
 
 async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> bool:
     """
-    Orchestrates the entire end-to-end lifecycle of a document ingestion request.
-
-    This coroutine governs the transactional boundary of the ingestion process. 
-    It is responsible for transitioning the `DownloadRequest` tracking state, 
-    querying the local semantic cache to prevent redundant network I/O, resolving 
-    global metadata through prioritized external adapters, executing the binary 
-    download, and persisting the resulting payload to the configured storage backend.
-
-    Any unhandled exceptions during metadata resolution or binary retrieval are 
-    caught, converted into string payloads, and written back to the `DownloadRequest` 
-    record to provide immediate upstream observability to the frontend clients.
-
-    Args:
-        ticket_id: The tracking UUID of the DownloadRequest record.
-        doi: The target Digital Object Identifier to ingest.
-        user_id: The unique identifier of the requesting entity.
-        kb_id: The target Knowledge Base destination for the final linkage.
-
-    Returns:
-        bool: True if the document was successfully acquired and linked, or if 
-              it was fulfilled via local cache. False if the network layer failed, 
-              the document is paywalled, or a storage violation occurred.
+    Coordinates the full document acquisition and semantic indexing lifecycle.
     """
+    settings, db = get_task_infrastructure()
     docs_db = db.dict("global_documents")
     kbs_db = db.dict("knowledge_bases")
     downloads_db = db.dict("downloads")
@@ -172,27 +136,30 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
 
         meta: Optional[GlobalDocumentMeta] = None
         for source_name in settings.data_sources.priority:
-            source = get_data_source(
-                source_name, 
-                settings=settings,
-                db=db,
-                user_id=user_id
-            )
+            source = get_data_source(source_name, settings=settings, db=db, user_id=user_id)
             meta = await source.fetch_by_doi(doi)
             if meta:
                 break
 
         if not meta or not meta.storage_uri.startswith("http"):
-            raise ValueError("Target document is either non-existent or restricted behind a closed access paywall.")
+            raise ValueError("Document metadata is restricted or unavailable.")
 
-        asset_bytes = await _download_asset(meta.storage_uri, meta.mime_type)
+        try:
+            asset_bytes = await _download_asset(meta.storage_uri, meta.mime_type)
+        except ValueError as primary_err:
+            logger.warning(f"Primary storage URI failed: {primary_err}")
+            logger.info(f"Initiating generic DOI resolution fallback for {doi}...")
+            fallback_url = f"https://doi.org/{doi}"
+            
+            if fallback_url != meta.storage_uri:
+                asset_bytes = await _download_asset(fallback_url, meta.mime_type)
+            else:
+                raise primary_err
+
         if not asset_bytes:
-            raise ValueError("Upstream repository blocked the download request or returned a corrupted payload.")
+            raise ValueError("Payload delivery failed or binary corrupted after all fallback attempts.")
 
-        storage = get_storage(
-            settings.storage.selected, 
-            base_path=settings.storage.local.base_path
-        )
+        storage = get_storage(settings.storage.selected, base_path=settings.storage.local.base_path)
         safe_filename = f"{doi.replace('/', '_')}{meta.file_extension}"
         local_uri = await storage.save(safe_filename, asset_bytes)
 
@@ -220,31 +187,17 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
         return True
 
     except Exception as e:
+        error_details = f"{type(e).__name__}: {str(e) if str(e) else 'No explicit message'}"
         if ticket_id in downloads_db:
             req = downloads_db[ticket_id]
             req["status"] = DownloadStatus.FAILED.value
-            req["error_message"] = str(e)
+            req["error_message"] = error_details
             downloads_db[ticket_id] = req
         return False
 
 @manager.task(mode='thread')
 def ingest_paper(ticket_id: str, doi: str, user_id: str, kb_id: str) -> bool:
     """
-    Synchronous Castor execution boundary for the ingestion pipeline.
-
-    Since the castor-io infrastructure dispatches tasks using a standard 
-    ThreadPoolExecutor, this function serves as the critical bridge to spawn 
-    a localized asynchronous event loop. It delegates the execution of the 
-    I/O-heavy orchestration to the underlying asyncio engine, preventing 
-    thread blocking and ensuring non-blocking network requests.
-
-    Args:
-        ticket_id: Identifier mapped to the frontend's pending DownloadRequest.
-        doi: Target document identifier.
-        user_id: Requester identity for audit and access control.
-        kb_id: Destination namespace for the document pointer.
-
-    Returns:
-        bool: State of the ingestion pipeline execution.
+    Entrypoint for the ingestion worker task.
     """
     return asyncio.run(_async_ingest(ticket_id, doi, user_id, kb_id))

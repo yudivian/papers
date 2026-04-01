@@ -54,7 +54,7 @@ async def get_current_user(
     
     if x_user_id in users_db:
         user_data = users_db[x_user_id]
-        return User.model_validate(user_data) if isinstance(user_data, dict) else user_data
+        return User.model_validate(user_data)
 
     quota_bytes = settings.quotas.user_logical_limit_gb * (1024 ** 3)
     
@@ -73,8 +73,8 @@ async def get_current_user(
     default_kb = KnowledgeBase(
         kb_id=default_kb_id,
         owner_id=x_user_id,
-        name="My Library",
-        description="System provisioned initial workspace.",
+        name=settings.app.initial_kb_name,
+        description=settings.app.initial_kb_description,
         note="Automatically generated during first login."
     )
     

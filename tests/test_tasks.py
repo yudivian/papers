@@ -28,7 +28,12 @@ def test_env():
 
 def test_ingest_paper_full_orchestration(test_env):
     """
-    Validates the end-to-end execution of the ingestion pipeline.
+    Validates the end-to-end execution of the ingestion pipeline using a patched infrastructure.
+
+    This test verifies that the pipeline correctly transitions through the downloading 
+    and completed states, saves the file to disk, and updates the global document registry. 
+    It mocks the infrastructure factory to return a controlled test database and 
+    configuration object.
     """
     test_db = BeaverDB(test_env["db_path"])
     user_id = "user_alpha"
@@ -56,16 +61,15 @@ def test_ingest_paper_full_orchestration(test_env):
         source="openalex"
     )
 
-    with patch("papers.backend.tasks.db", test_db), \
-         patch("papers.backend.tasks.settings") as mock_settings, \
+    mock_settings = MagicMock()
+    mock_settings.storage.selected = "local"
+    mock_settings.storage.local.base_path = test_env["storage_path"]
+    mock_settings.data_sources.priority = ["openalex"]
+
+    with patch("papers.backend.tasks.get_task_infrastructure", return_value=(mock_settings, test_db)), \
          patch("papers.backend.tasks.get_data_source") as mock_get_source, \
          patch("papers.backend.tasks._download_asset", new_callable=AsyncMock) as mock_dl, \
          patch("papers.backend.tasks.SemanticEngine") as mock_engine:
-
-        mock_settings.storage.selected = "local"
-        mock_settings.storage.local.base_path = test_env["storage_path"]
-        mock_settings.data_sources.priority = ["openalex"]
-        mock_settings.database.file = test_env["db_path"]
 
         source_instance = MagicMock()
         source_instance.fetch_by_doi = AsyncMock(return_value=mock_meta)
@@ -78,17 +82,16 @@ def test_ingest_paper_full_orchestration(test_env):
         result = ingest_paper.callable(ticket_id, test_doi, user_id, kb_id)
 
         error_msg = downloads_db[ticket_id].get("error_message", "No error recorded")
-        assert result is True, f"Worker fail internally: {error_msg}"
+        assert result is True, f"Worker failed internally: {error_msg}"
         
         docs_db = test_db.dict("global_documents")
         assert test_doi in docs_db
         assert docs_db[test_doi]["file_size"] > 0
-        
         assert downloads_db[ticket_id]["status"] == DownloadStatus.COMPLETED.value
 
 def test_ingest_paper_cache_bypass(test_env):
     """
-    Ensures the pipeline halts immediately if the document already exists locally.
+    Ensures the pipeline halts immediately if the document DOI already exists in the registry.
     """
     test_db = BeaverDB(test_env["db_path"])
     test_doi = "10.1234/cached.paper"
@@ -98,7 +101,9 @@ def test_ingest_paper_cache_bypass(test_env):
     docs_db = test_db.dict("global_documents")
     docs_db[test_doi] = {"doi": test_doi, "title": "Cached", "storage_uri": "local"}
 
-    with patch("papers.backend.tasks.db", test_db), \
+    mock_settings = MagicMock()
+
+    with patch("papers.backend.tasks.get_task_infrastructure", return_value=(mock_settings, test_db)), \
          patch("papers.backend.tasks.get_data_source") as mock_get_source:
         
         result = ingest_paper.callable(ticket_id, test_doi, "user_x", kb_id)
@@ -108,7 +113,7 @@ def test_ingest_paper_cache_bypass(test_env):
 
 def test_ingest_paper_download_resilience(test_env):
     """
-    Validates failure containment when the remote PDF is unavailable.
+    Validates failure containment when the remote asset is unavailable or corrupted.
     """
     test_db = BeaverDB(test_env["db_path"])
     test_doi = "10.1234/broken.link"
@@ -129,16 +134,15 @@ def test_ingest_paper_download_resilience(test_env):
         source="openalex"
     )
 
-    with patch("papers.backend.tasks.db", test_db), \
-         patch("papers.backend.tasks.settings") as mock_settings, \
+    mock_settings = MagicMock()
+    mock_settings.storage.selected = "local"
+    mock_settings.storage.local.base_path = test_env["storage_path"]
+    mock_settings.data_sources.priority = ["openalex"]
+
+    with patch("papers.backend.tasks.get_task_infrastructure", return_value=(mock_settings, test_db)), \
          patch("papers.backend.tasks.get_data_source") as mock_get_source, \
          patch("papers.backend.tasks._download_asset", new_callable=AsyncMock) as mock_dl:
              
-        mock_settings.storage.selected = "local"
-        mock_settings.storage.local.base_path = test_env["storage_path"]
-        mock_settings.data_sources.priority = ["openalex"]
-        mock_settings.database.file = test_env["db_path"]
-
         source_instance = MagicMock()
         source_instance.fetch_by_doi = AsyncMock(return_value=mock_meta)
         mock_get_source.return_value = source_instance
@@ -152,7 +156,7 @@ def test_ingest_paper_download_resilience(test_env):
 
 def test_castor_queue_submission(test_env):
     """
-    Verifies that the castor-io Manager correctly enqueues the task.
+    Verifies that the castor-io Manager correctly enqueues the task in the persistent queue.
     """
     test_db = BeaverDB(test_env["db_path"])
     

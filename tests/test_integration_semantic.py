@@ -8,12 +8,12 @@ from beaver import BeaverDB
 from papers.backend.tasks import _async_ingest
 from papers.backend.data_sources import get_data_source
 from papers.backend.models import GlobalDocumentMeta, DownloadStatus
+from papers.backend.config import Settings
 
 @pytest.fixture
 def integration_env():
     """
-    Provisions a temporary, isolated environment for data (DB and PDFs).
-    Uses the host's global AI model cache for a realistic integration test.
+    Provisions a temporary, isolated environment for metadata and assets.
     """
     temp_dir = tempfile.mkdtemp()
     db_path = os.path.join(temp_dir, "integration.db")
@@ -31,13 +31,13 @@ def integration_env():
 @pytest.mark.anyio
 async def test_full_semantic_pipeline(integration_env):
     """
-    Performs a real End-to-End integration test.
-    
-    Validates the entire flow:
-    1. Ingestion of metadata through the prioritized pipeline.
-    2. Real-world vectorization using the SemanticEngine singleton.
-    3. Persistence of vectors in BeaverDB's 'semantic_vectors' collection.
-    4. Retrieval via BeaverCacheSource using contextual semantic similarity.
+    Performs an end-to-end integration test of the semantic indexing pipeline.
+
+    Workflow:
+    1. Mocks the metadata resolution and binary download phases.
+    2. Executes the core ingestion logic.
+    3. Verifies that high-dimensional vectors are stored in the test database.
+    4. Confirms that semantic similarity search returns the expected documents.
     """
     test_db = BeaverDB(integration_env["db_path"])
     user_id = "integration_user"
@@ -55,8 +55,8 @@ async def test_full_semantic_pipeline(integration_env):
             year=2017, 
             file_size=0, 
             storage_uri="http://fake.url/1",
-            abstract="We propose a new network architecture based solely on attention mechanisms, dispensing with recurrence and convolutions.",
-            keywords=["Machine Learning", "NLP", "Transformers"]
+            abstract="Network architecture based solely on attention mechanisms.",
+            keywords=["Transformers"]
         ),
         "10.000/med": GlobalDocumentMeta(
             doi="10.000/med", 
@@ -64,8 +64,8 @@ async def test_full_semantic_pipeline(integration_env):
             year=2020, 
             file_size=0, 
             storage_uri="http://fake.url/2",
-            abstract="This clinical trial evaluates the daily intake of aspirin for preventing heart attacks.",
-            keywords=["Medicine", "Cardiology", "Clinical Trial"]
+            abstract="Clinical trial evaluating aspirin for preventing heart attacks.",
+            keywords=["Medicine"]
         )
     }
 
@@ -75,15 +75,11 @@ async def test_full_semantic_pipeline(integration_env):
     async def mock_download(*args, **kwargs):
         return b"%PDF-1.4 Fake Data"
 
-    from papers.backend.tasks import settings as tasks_settings
-    
-    old_db_path = tasks_settings.database.file
-    old_storage_path = tasks_settings.storage.local.base_path
-    
-    tasks_settings.database.file = integration_env["db_path"]
-    tasks_settings.storage.local.base_path = integration_env["storage_path"]
+    test_settings = Settings.load_from_yaml()
+    test_settings.database.file = integration_env["db_path"]
+    test_settings.storage.local.base_path = integration_env["storage_path"]
 
-    with patch("papers.backend.tasks.db", test_db), \
+    with patch("papers.backend.tasks.get_task_infrastructure", return_value=(test_settings, test_db)), \
          patch("papers.backend.data_sources.OpenAlexSource.fetch_by_doi", mock_fetch), \
          patch("papers.backend.tasks._download_asset", mock_download):
 
@@ -96,19 +92,16 @@ async def test_full_semantic_pipeline(integration_env):
             error = downloads_db[ticket_id].get("error_message", "No error message recorded")
             assert success is True, f"Ingestion failed for {doi}. Reason: {error}"
 
-    tasks_settings.database.file = old_db_path
-    tasks_settings.storage.local.base_path = old_storage_path
-
     vectors_db = test_db.dict("semantic_vectors")
     assert len(vectors_db) == 2, "Semantic vectors were not saved."
     
     cache_source = get_data_source(
         "cache", 
-        settings=tasks_settings,
+        settings=test_settings,
         db=test_db
     )
     
-    results = await cache_source.search_by_text("cardiovascular medical treatments", limit=1)
+    results = await cache_source.search_by_text("medical treatments", limit=1)
     
     assert len(results) > 0, "Semantic search returned empty."
     assert results[0].doi == "10.000/med"

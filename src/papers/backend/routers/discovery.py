@@ -1,89 +1,52 @@
-"""
-API router for document discovery and semantic search operations.
-
-This module exposes endpoints for resolving metadata via Digital Object 
-Identifiers (DOIs) and performing natural language semantic searches against 
-the local vector database. It implements a fallback resolution strategy, 
-querying the local cache before reaching out to external satellite providers.
-"""
-
-from typing import List
+from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from beaver import BeaverDB
 
-from papers.backend.deps import get_current_user, get_db
+from papers.backend.deps import get_current_user, get_db, get_settings
 from papers.backend.models import GlobalDocumentMeta
-from papers.backend.data_sources import get_data_source
 from papers.backend.config import Settings
+from papers.backend.orchestrator import DiscoveryOrchestrator
 
 router = APIRouter()
-settings = Settings.load_from_yaml()
 
 @router.get("/doi/{doi:path}", response_model=GlobalDocumentMeta)
 async def resolve_doi(
     doi: str,
     user_id: str = Depends(get_current_user),
-    db: BeaverDB = Depends(get_db)
+    db: BeaverDB = Depends(get_db),
+    settings: Settings = Depends(get_settings)
 ) -> GlobalDocumentMeta:
     """
-    Resolves comprehensive metadata for a specific document identifier.
+    Resolves comprehensive metadata for a DOI via the DiscoveryOrchestrator.
 
-    This endpoint attempts to fulfill the request using the local cache first 
-    to preserve external API quotas. If a cache miss occurs, it seamlessly 
-    falls back to the OpenAlex satellite provider.
-
-    Args:
-        doi: The target Digital Object Identifier, URL-encoded if necessary.
-        user_id: The authenticated user's identifier, injected via dependencies.
-        db: The active BeaverDB connection instance, injected via dependencies.
-
-    Returns:
-        GlobalDocumentMeta: The normalized document metadata payload.
-
-    Raises:
-        HTTPException: A 404 error if the DOI cannot be resolved across all providers.
+    This endpoint delegates the tiered resolution strategy to the orchestrator 
+    and handles the high-level HTTP 404 response if the document cannot be 
+    found in any configured provider.
     """
-    cache_source = get_data_source("cache", settings=settings, db=db)
+    orchestrator = DiscoveryOrchestrator(settings=settings, db=db, user_id=user_id)
+    meta = await orchestrator.resolve_doi(doi)
     
-    cached_meta = await cache_source.fetch_by_doi(doi)
-    if cached_meta:
-        return cached_meta
+    if not meta:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Metadata for DOI '{doi}' could not be resolved."
+        )
+    return meta
 
-    openalex_source = get_data_source("openalex", settings=settings, db=db, user_id=user_id)
-    
-    external_meta = await openalex_source.fetch_by_doi(doi)
-    if external_meta:
-        return external_meta
-
-    raise HTTPException(
-        status_code=404, 
-        detail=f"Metadata for DOI '{doi}' could not be resolved locally or externally."
-    )
-
-@router.get("/search", response_model=List[GlobalDocumentMeta])
+@router.get("/search", response_model=Dict[str, List[GlobalDocumentMeta]])
 async def semantic_search(
     q: str = Query(..., description="Natural language semantic query string"),
-    limit: int = Query(10, ge=1, le=50, description="Maximum number of results to return"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum results per source"),
+    source: Optional[str] = Query(None, description="Specific provider to target"),
     user_id: str = Depends(get_current_user),
-    db: BeaverDB = Depends(get_db)
-) -> List[GlobalDocumentMeta]:
+    db: BeaverDB = Depends(get_db),
+    settings: Settings = Depends(get_settings)
+) -> Dict[str, List[GlobalDocumentMeta]]:
     """
-    Executes a localized semantic vector search against ingested documents.
+    Performs a classified semantic search across all prioritized data sources.
 
-    This endpoint converts the incoming textual query into a high-dimensional 
-    vector representation and computes cosine similarity against all locally 
-    stored document vectors.
-
-    Args:
-        q: The user's natural language search prompt.
-        limit: The threshold for the maximum number of matches to return.
-        user_id: The authenticated user's identifier, injected via dependencies.
-
-    Returns:
-        List[GlobalDocumentMeta]: A ranked array of the most semantically relevant 
-                                  documents, ordered by descending similarity score.
+    The response is organized as a dictionary where each key corresponds to 
+    the name of the provider that returned the results.
     """
-    cache_source = get_data_source("cache", settings=settings, db=db)
-    
-    results = await cache_source.search_by_text(query=q, limit=limit)
-    return results
+    orchestrator = DiscoveryOrchestrator(settings=settings, db=db, user_id=user_id)
+    return await orchestrator.search(query=q, limit=limit, target_source=source)

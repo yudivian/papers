@@ -16,10 +16,8 @@ from beaver import BeaverDB
 
 from papers.backend.deps import get_current_user, get_db
 from papers.backend.models import GlobalDocumentMeta
-from papers.backend.config import Settings
 
 router = APIRouter()
-settings = Settings.load_from_yaml()
 
 class CleanupRequest(BaseModel):
     """
@@ -77,17 +75,17 @@ async def get_document_pdf(
     docs_db = db.dict("global_documents")
     
     if doi not in docs_db:
-        raise HTTPException(status_code=404, detail="Document metadata not found.")
+        raise HTTPException(status_code=404, detail="Metadata record not found.")
         
     doc_data = docs_db[doi]
     storage_uri = doc_data.get("storage_uri", "")
     
     if not os.path.exists(storage_uri):
-        raise HTTPException(status_code=404, detail="Physical PDF file not found on disk.")
+        raise HTTPException(status_code=404, detail="Binary asset missing on disk.")
         
     return FileResponse(
         path=storage_uri, 
-        media_type="application/pdf",
+        media_type=doc_data.get("mime_type", "application/pdf"),
         filename=os.path.basename(storage_uri)
     )
 

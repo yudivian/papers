@@ -1,32 +1,24 @@
-"""
-API router for user identity and system quota management.
-
-This module provides endpoints for retrieving the authenticated user's 
-profile, active configuration settings, and real-time storage utilization metrics.
-"""
-
 import os
 from typing import List
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from beaver import BeaverDB
 
-from papers.backend.deps import get_current_user, get_db
+from papers.backend.deps import get_current_user, get_db, get_settings
 from papers.backend.config import Settings
 
 router = APIRouter()
-settings = Settings.load_from_yaml()
 
 class QuotaInfo(BaseModel):
     """
-    Data Transfer Object representing the user's storage consumption.
+    Data Transfer Object providing a snapshot of user resource consumption.
     """
     used_bytes: int
     limit_bytes: int
 
 class UserProfileResponse(BaseModel):
     """
-    Data Transfer Object representing the user's identity and system status.
+    Standard response model for authenticated user identity and system metrics.
     """
     user_id: str
     active_data_sources: List[str]
@@ -35,20 +27,15 @@ class UserProfileResponse(BaseModel):
 @router.get("/me", response_model=UserProfileResponse)
 async def get_user_profile(
     user_id: str = Depends(get_current_user),
-    db: BeaverDB = Depends(get_db)
+    db: BeaverDB = Depends(get_db),
+    settings: Settings = Depends(get_settings)
 ) -> UserProfileResponse:
     """
-    Retrieves the authenticated user's profile and calculates current disk usage.
+    Retrieves the user profile and computes real-time disk usage.
 
-    Iterates through the global document registry to dynamically compute 
-    the exact physical footprint of the user's library on the server's disk.
-
-    Args:
-        user_id: The authenticated user's identifier, injected via dependencies.
-        db: The active BeaverDB connection instance, injected via dependencies.
-
-    Returns:
-        UserProfileResponse: The user's profile, active data sources, and real-time quota metrics.
+    This method calculates the total physical footprint of the documents 
+    registered in the global database by probing the filesystem directly, 
+    matching it against the logical limits defined in the configuration.
     """
     docs_db = db.dict("global_documents")
     used_bytes = 0
@@ -58,13 +45,10 @@ async def get_user_profile(
         if os.path.exists(storage_uri):
             used_bytes += os.path.getsize(storage_uri)
             
-    limit_bytes = 5 * 1024 * 1024 * 1024 
+    limit_bytes = settings.quotas.user_logical_limit_gb * (1024 ** 3)
 
     return UserProfileResponse(
         user_id=user_id,
         active_data_sources=settings.data_sources.priority,
-        quota=QuotaInfo(
-            used_bytes=used_bytes,
-            limit_bytes=limit_bytes
-        )
+        quota=QuotaInfo(used_bytes=used_bytes, limit_bytes=limit_bytes)
     )
