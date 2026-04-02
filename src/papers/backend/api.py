@@ -14,7 +14,8 @@ from papers.backend.routers import (
     kbs,
     discovery,
     ingestion,
-    documents
+    documents,
+    sources
 )
 
 api_router = APIRouter()
@@ -47,4 +48,10 @@ api_router.include_router(
     documents.router, 
     prefix="/documents", 
     tags=["Document Library"]
+)
+
+api_router.include_router(
+    sources.router, 
+    prefix="/sources", 
+    tags=["Data Sources"]
 )

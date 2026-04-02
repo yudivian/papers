@@ -2,14 +2,16 @@ import httpx
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Type
+from typing import Optional, List, Dict, Type, Any
 from beaver import BeaverDB
 from papers.backend.search import SemanticEngine
+from pydantic import BaseModel, Field
 
 from papers.backend.models import (
     GlobalDocumentMeta, 
     OpenAlexUserStatus, 
-    UserAdapterRegistry
+    UserAdapterRegistry,
+    OpenAlexUserStatus
 )
 from papers.backend.config import Settings
 
@@ -30,11 +32,29 @@ def get_data_source(name: str, settings: Settings, db: BeaverDB, **kwargs) -> "B
         raise ValueError(f"Unknown adapter: '{name}'")
     return _DATA_SOURCES[name](settings=settings, db=db, **kwargs)
 
+class AdapterConfig(BaseModel):
+    """
+    Base configuration schema for data source adapters.
+    """
+    pass
+
+class OpenAlexConfig(AdapterConfig):
+    """
+    Configuration schema defining the required parameters for the OpenAlex data source.
+    """
+    personal_api_key: Optional[str] = Field(
+        default=None,
+        title="Personal API Key",
+        description="Optional API key to access higher rate limits and priority pools.",
+        json_schema_extra={"ui_widget": "password"}
+    )
+
 class BaseDataSource(ABC):
     """
     Abstract interface defining the contract for all metadata providers.
     """
     name: str
+    config_schema: Type[AdapterConfig] = AdapterConfig
 
     @abstractmethod
     async def fetch_by_doi(self, doi: str) -> Optional[GlobalDocumentMeta]:
@@ -43,6 +63,31 @@ class BaseDataSource(ABC):
     @abstractmethod
     async def search_by_text(self, query: str, limit: int = 10) -> List[GlobalDocumentMeta]:
         pass
+    
+    config_schema: Type[AdapterConfig] = AdapterConfig
+
+    @classmethod
+    def get_ui_schema(cls) -> Dict[str, Any]:
+        """
+        Generates a JSON Schema representation of the adapter's configuration requirements.
+        """
+        return cls.config_schema.model_json_schema()  
+    
+    @classmethod
+    def get_config_state(cls, user_id: str, db: Any) -> Dict[str, Any]:
+        """
+        Retrieves adapter-specific internal state to be merged with the user's configuration.
+        Defaults to an empty dictionary.
+        """
+        return {}
+    
+    @classmethod
+    def apply_config_side_effects(cls, user_id: str, config: AdapterConfig, db: Any) -> None:
+        """
+        Executes adapter-specific state mutations upon configuration updates.
+        Defaults to a no-operation.
+        """
+        pass 
 
 @register_source
 class BeaverCacheSource(BaseDataSource):
@@ -109,6 +154,7 @@ class OpenAlexSource(BaseDataSource):
     Autonomous OpenAlex adapter with built-in quota management and health monitoring.
     """
     name = "openalex"
+    config_schema = OpenAlexConfig
 
     def __init__(self, settings: Settings, db: BeaverDB, user_id: str, **kwargs):
         """
@@ -162,16 +208,22 @@ class OpenAlexSource(BaseDataSource):
         Core execution engine that monitors API health and credit consumption.
         """
         status = self._get_status()
+        
+        configs_db = self.db.dict("user_adapter_configs")
+        user_configs = configs_db.get(self.user_id, {})
+        openalex_config = user_configs.get(self.name, {})
+        personal_api_key = openalex_config.get("personal_api_key")
+        
         keys_to_try = []
         
-        if status.personal_api_key and status.personal_key_active:
-            keys_to_try.append(("personal", status.personal_api_key))
+        if personal_api_key and status.personal_key_active:
+            keys_to_try.append(("personal", personal_api_key))
         
         if not is_search:
             for k in self.config.system_keys:
                 keys_to_try.append(("system", k))
         else:
-            if not status.personal_api_key or self.config.allow_system_fallback:
+            if not personal_api_key or self.config.allow_system_fallback:
                 for k in self.config.system_keys:
                     keys_to_try.append(("system", k))
 
@@ -301,3 +353,28 @@ class OpenAlexSource(BaseDataSource):
                 institutions=institutions
             ))
         return results
+    
+    @classmethod
+    def get_config_state(cls, user_id: str, db: Any) -> Dict[str, Any]:
+        """
+        Retrieves internal system trackers specific to OpenAlex.
+        """
+        status_db = db.dict("openalex_user_status")
+        return status_db.get(user_id, {})
+    
+    @classmethod
+    def apply_config_side_effects(cls, user_id: str, config: OpenAlexConfig, db: Any) -> None:
+        """
+        Updates internal system trackers specific to OpenAlex when a new configuration is provided.
+        """
+        
+        status_db = db.dict("openalex_user_status")
+        status_data = status_db.get(user_id)
+        
+        if status_data:
+            status = OpenAlexUserStatus.model_validate(status_data)
+            status.personal_key_active = True
+            status_db[user_id] = status.model_dump(mode="json")
+        else:
+            new_status = OpenAlexUserStatus(user_id=user_id, personal_key_active=True)
+            status_db[user_id] = new_status.model_dump(mode="json")

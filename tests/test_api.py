@@ -185,3 +185,76 @@ def test_semantic_search_endpoint(MockOrch, api_env):
     assert isinstance(data, dict)
     assert "cache" in data
     assert data["cache"][0]["doi"] == "10.test/semantic"
+    
+def test_sources_discovery_endpoint(api_env):
+    """
+    Validates that the discovery endpoint correctly lists available data adapters.
+    """
+    response = client.get("/api/v1/sources")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    
+    openalex_found = any(source["id"] == "openalex" for source in data)
+    cache_found = any(source["id"] == "cache" for source in data)
+    
+    assert openalex_found is True
+    assert cache_found is True
+
+def test_sources_schema_endpoint(api_env):
+    """
+    Verifies that a valid adapter returns its JSON schema and an invalid one returns 404.
+    """
+    response = client.get("/api/v1/sources/openalex/schema")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "properties" in data
+    assert "personal_api_key" in data["properties"]
+    
+    response_invalid = client.get("/api/v1/sources/invalid_adapter/schema")
+    assert response_invalid.status_code == 404
+
+def test_get_user_source_config_merges_state(api_env):
+    """
+    Ensures the configuration endpoint successfully merges user configs with adapter internal state.
+    """
+    db = api_env["db"]
+    status_db = db.dict("openalex_user_status")
+    
+    status_db["authorized_test_user"] = {
+        "user_id": "authorized_test_user", 
+        "personal_key_active": False,
+        "daily_system_search_count": 5
+    }
+    
+    response = client.get("/api/v1/users/me/sources/openalex/config")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("personal_key_active") is False
+    assert data.get("daily_system_search_count") == 5
+
+def test_update_user_source_config_with_side_effects(api_env):
+    """
+    Validates dynamic configuration updates and the triggering of adapter-specific side effects.
+    """
+    db = api_env["db"]
+    status_db = db.dict("openalex_user_status")
+    status_db["authorized_test_user"] = {
+        "user_id": "authorized_test_user", 
+        "personal_key_active": False
+    }
+    
+    payload = {"personal_api_key": "new_secure_key_123"}
+    response = client.put("/api/v1/users/me/sources/openalex/config", json=payload)
+    
+    assert response.status_code == 200
+    
+    configs_db = db.dict("user_adapter_configs")
+    assert "authorized_test_user" in configs_db
+    assert configs_db["authorized_test_user"]["openalex"]["personal_api_key"] == "new_secure_key_123"
+    
+    updated_status = status_db.get("authorized_test_user")
+    assert updated_status["personal_key_active"] is True

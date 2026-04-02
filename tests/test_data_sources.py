@@ -116,29 +116,24 @@ async def test_fallback_logic_disabled(db_context, user_id, sys_settings):
     Tests that if allow_system_fallback is False, a user with an exhausted 
     personal key is blocked even if the system pool has credits.
     """
-    # 1. Setup: User has a personal key but it's marked as exhausted (inactive)
     status_db = db_context.dict("openalex_user_status")
     exhausted_status = OpenAlexUserStatus(
         user_id=user_id,
-        personal_api_key="my_broken_key",
-        personal_key_active=False  # Key is "dead" for the day
+        personal_key_active=False
     )
     status_db[user_id] = exhausted_status.model_dump(mode="json")
     
-    # 2. Setup: Modify config at runtime to disable fallback
+    configs_db = db_context.dict("user_adapter_configs")
+    configs_db[user_id] = {"openalex": {"personal_api_key": "my_broken_key"}}
+    
     source = get_data_source("openalex", settings=sys_settings, user_id=user_id, db=db_context)
     source.config.allow_system_fallback = False
     
-    # 3. Action: Attempt search
     results = await source.search_by_text("machine learning", limit=1)
     
-    # 4. Verification: Should be empty because fallback is disabled 
-    # and the personal key is inactive.
     assert len(results) == 0
     
-    # 5. Flip the switch: Enable fallback
     source.config.allow_system_fallback = True
     results_with_fallback = await source.search_by_text("machine learning", limit=1)
     
-    # 6. Verification: Now it should succeed using the system pool
     assert len(results_with_fallback) > 0

@@ -117,17 +117,16 @@ class UserAdapterRegistry(BaseModel):
 
 class OpenAlexUserStatus(BaseModel):
     """
-    Detailed state management for the OpenAlex integration constraints.
-
-    Tracks the health of personal API keys and limits daily system-level 
-    text searches to prevent global rate-limiting.
+    Internal system state tracking for OpenAlex usage constraints.
+    
+    This model strictly tracks read-only metrics and health flags, separating
+    them from the user-editable configurations defined in the data sources layer.
     """
     model_config = ConfigDict(from_attributes=True)
 
     user_id: str = Field(..., description="Unique identifier of the user.")
-    personal_api_key: Optional[str] = Field(None, description="User-provided API key.")
-    personal_key_active: bool = Field(default=True, description="Health status of the personal key.")
-    daily_system_search_count: int = Field(default=0, description="Number of searches using the system pool.")
+    personal_key_active: bool = Field(default=True, description="System health status of the user's personal key.")
+    daily_system_search_count: int = Field(default=0, description="Number of searches using the shared system pool.")
     last_reset: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp for the next daily quota renewal cycle."
