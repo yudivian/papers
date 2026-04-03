@@ -1,20 +1,39 @@
-"""
-Main application entrypoint for the Papers Engine REST API.
-
-This module initializes the FastAPI application instance, configures global 
-middleware such as CORS for frontend integration, and mounts the primary 
-API router containing all domain-specific endpoints.
-"""
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 from papers.backend.api import api_router
+from papers.backend.tasks import manager
+from castor.server import Server
+
+import threading
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 1. Instanciar el servidor de ejecución de Castor
+    # manager_path es el string para que los procesos hijos re-importen el manager
+    server = Server(
+        manager=manager,
+        workers=2, 
+        threads=4, 
+        manager_path="papers.backend.tasks:manager"
+    )
+    
+    # 2. El método .serve() es un bucle infinito bloqueante. 
+    # Lo lanzamos en un hilo daemon para que viva con la app de FastAPI.
+    worker_thread = threading.Thread(target=server.serve, daemon=True)
+    worker_thread.start()
+    
+    yield
+    
+    # 3. Al apagar la app, detenemos los executors del servidor
+    server.stop()
 
 app = FastAPI(
     title="Papers AI Engine",
     description="Autonomous Academic Research and Semantic Search API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -26,11 +45,3 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
-
-@app.get("/health", tags=["System"])
-async def health_check() -> dict[str, str]:
-    """
-    Provides a lightweight, unauthenticated endpoint for monitoring 
-    application liveliness and network reachability.
-    """
-    return {"status": "operational", "engine": "papers-ai"}
