@@ -93,6 +93,7 @@ class DownloadRequest(BaseModel):
     user_id: str = Field(..., description="Requester identifier.")
     kb_id: str = Field(..., description="Target KB for document linkage.")
     doi: str = Field(..., description="DOI queued for acquisition.")
+    title: str = Field(..., description="Human-readable title of the paper.")   
     status: DownloadStatus = Field(default=DownloadStatus.PENDING)
     error_message: Optional[str] = Field(None, description="Detailed failure reason if applicable.")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -50,7 +50,11 @@ def test_complete_system_lifecycle():
 
     logger.info("Step 3: Triggering ingestion via API...")
     target_doi = "10.1371/journal.pone.0115069"
-    ingest_payload = {"doi": target_doi, "kb_id": kb_id}
+    ingest_payload = {
+        "doi": target_doi, 
+        "kb_id": kb_id,
+        "title": "Ten Simple Rules for Better Figures"
+    }
     
     ingest_res = client.post("/api/v1/ingestion/start", json=ingest_payload, headers=USER_HEADERS)
     assert ingest_res.status_code == 202

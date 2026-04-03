@@ -8,7 +8,7 @@ for real-time polling.
 """
 
 import uuid
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from beaver import BeaverDB
@@ -25,6 +25,8 @@ class IngestionRequest(BaseModel):
     """
     doi: str
     kb_id: str
+    title: str
+    
 
 class IngestionResponse(BaseModel):
     """
@@ -37,6 +39,9 @@ class IngestionStatusResponse(BaseModel):
     Data Transfer Object representing the current state of an ingestion task.
     """
     ticket_id: str
+    doi: str    
+    title: str  
+    kb_id: str  
     status: str
     error_message: Optional[str] = None
 
@@ -66,7 +71,9 @@ async def start_ingestion(
     downloads_db[ticket_id] = {
         "status": DownloadStatus.PENDING.value,
         "doi": payload.doi,
-        "kb_id": payload.kb_id
+        "title": payload.title,
+        "kb_id": payload.kb_id,
+        "user_id": user_id
     }
     
     ingest_paper.submit(
@@ -112,6 +119,39 @@ async def get_ingestion_status(
         
     return IngestionStatusResponse(
         ticket_id=ticket_id,
+        doi=ticket_data.get("doi", ""),
+        title=ticket_data.get("title", "Unknown Title"),
+        kb_id=ticket_data.get("kb_id", ""),
         status=ticket_data.get("status", DownloadStatus.PENDING.value),
         error_message=ticket_data.get("error_message")
     )
+    
+
+
+@router.get("/active", response_model=List[IngestionStatusResponse])
+async def get_active_ingestions(
+    user_id: str = Depends(get_current_user),
+    db: BeaverDB = Depends(get_db)
+) -> List[IngestionStatusResponse]:
+    """
+    Retrieves all user downloads that have not yet finished. 
+    Enables the frontend to restore its visual state upon page reload.
+    """
+    downloads_db = db.dict("downloads")
+    active_tasks = []
+    
+    for ticket_id, data in downloads_db.items():
+        if data.get("user_id") == user_id:
+            status = data.get("status")
+            if status in [DownloadStatus.PENDING.value, DownloadStatus.DOWNLOADING.value]:
+                active_tasks.append(
+                    IngestionStatusResponse(
+                        ticket_id=ticket_id,
+                        doi=data.get("doi"),
+                        title=data.get("title", "Unknown Title"),
+                        kb_id=data.get("kb_id"),
+                        status=status
+                    )
+                )
+                
+    return active_tasks

@@ -132,12 +132,21 @@ def test_health_and_users_real_quota(api_env):
     profile = client.get("/api/v1/users/me").json()
     assert profile["quota"]["used_bytes"] == 4
 
+
 @patch("papers.backend.routers.ingestion.ingest_paper")
 def test_ingestion_async_flow(mock_ingest, api_env):
     """
-    Verifies non-blocking task submission and tracking.
+    Verifies non-blocking task submission and tracking by validating 
+    that the ingestion payload is successfully accepted and a valid 
+    tracking ticket is issued without awaiting worker completion.
     """
-    res = client.post("/api/v1/ingestion/start", json={"doi": "10.test/a", "kb_id": "kb_1"})
+    payload = {
+        "doi": "10.test/a",
+        "kb_id": "kb_1",
+        "title": "Asynchronous Ingestion Integration Test Document"
+    }
+    
+    res = client.post("/api/v1/ingestion/start", json=payload)
     ticket_id = res.json()["ticket_id"]
     
     mock_ingest.submit.assert_called_once()

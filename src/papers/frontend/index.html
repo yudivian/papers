@@ -4,14 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Papers AI Engine - Workspace</title>
+    <title>Papers AI Engine - Discovery</title>
     <script src="/assets/js/tailwind-browser.js"></script>
     <script src="/assets/js/jquery-4.0.0.js"></script>
     <script src="/assets/js/auth.js"></script>
     <script>requireAuth();</script>
     <script src="/assets/js/api.js"></script>
     <script src="/assets/js/settings.js"></script>
-    <script src="/assets/js/workspace.js"></script>
 </head>
 
 <body class="bg-slate-50 min-h-screen overflow-x-hidden font-sans">
@@ -19,6 +18,7 @@
     <div id="sidebar-container"></div>
 
     <main class="p-4 md:p-8 ml-0 md:ml-64 relative transition-all duration-300">
+
         <header class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div class="flex items-center gap-3">
                 <button id="openSidebarMobileBtn" class="md:hidden text-slate-600 hover:text-slate-900 p-1">
@@ -28,16 +28,13 @@
                     </svg>
                 </button>
                 <div>
-                    <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Workspace</h1>
-                    <p class="text-sm md:text-base text-slate-500 mt-1">Manage your knowledge bases and projects.</p>
+                    <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Discovery Hub</h1>
+                    <p class="text-sm md:text-base text-slate-500 mt-1">Search and ingest papers directly to your
+                        Knowledge Bases.</p>
                 </div>
             </div>
 
             <div class="flex flex-wrap gap-3 items-center w-full md:w-auto">
-                <button id="btnNewKB"
-                    class="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors shadow-sm">
-                    + New Knowledge Base
-                </button>
                 <div class="bg-white border border-slate-200 px-3 py-2 rounded-lg shadow-sm hidden sm:block">
                     <span class="text-sm text-slate-500">Session:</span>
                     <span id="displayUser"
@@ -46,133 +43,89 @@
             </div>
         </header>
 
-        <div id="workspace-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        <div id="workspace-detail" class="hidden bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            <div
-                class="bg-slate-50 border-b border-slate-100 p-4 md:p-6 flex flex-col sm:flex-row justify-between items-start gap-4">
-                <div>
-                    <button id="btnBackToGrid"
-                        class="text-slate-500 hover:text-slate-800 text-sm font-medium mb-3 flex items-center gap-1">
-                        ← Back to Workspace
-                    </button>
-                    <h2 id="detailTitle" class="text-xl md:text-2xl font-bold text-slate-800 break-words"></h2>
-                    <p id="detailDesc" class="text-slate-500 mt-1 text-sm"></p>
-                </div>
-                <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto mt-4 sm:mt-0">
-                    <button id="btnEditKB"
-                        class="flex-1 sm:flex-none text-blue-600 hover:bg-blue-50 px-4 py-1.5 rounded text-sm font-medium border border-blue-100 transition-colors">
-                        Edit KB
-                    </button>
-                    <button id="btnDeleteKB"
-                        class="flex-1 sm:flex-none text-red-500 hover:bg-red-50 px-4 py-1.5 rounded text-sm font-medium border border-red-100 transition-colors">
-                        Delete KB
-                    </button>
-                </div>
-            </div>
-            <div class="p-4 md:p-6">
-                <h3
-                    class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">
-                    Documents inside</h3>
-                <ul id="detailDocsList" class="space-y-2"></ul>
-            </div>
-        </div>
-    </main>
+            <div class="lg:col-span-2 space-y-6">
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 
-    <div id="modalNewKB"
-        class="fixed inset-0 bg-slate-900/50 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
-        <div
-            class="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden transform scale-95 transition-transform">
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 class="text-lg font-bold text-slate-800">Create Knowledge Base</h3>
-                <button id="btnCloseModal" class="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
-            </div>
-            <form id="formNewKB" class="p-6 space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Name</label>
-                    <input type="text" id="kbName" required
-                        class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Description (Optional)</label>
-                    <textarea id="kbDesc" rows="3"
-                        class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                </div>
-                <div
-                    class="pt-4 flex flex-col sm:flex-row justify-between items-center gap-3 border-t border-slate-100">
-                    <button type="button" id="btnCancelModal"
-                        class="w-full sm:w-auto px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
-                    <div class="flex gap-2 w-full sm:w-auto">
-                        <button type="button" id="btnCreateStay"
-                            class="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200">
-                            Create & Stay
+                    <div class="flex border-b border-slate-200 bg-slate-50">
+                        <button id="tab-doi"
+                            class="flex-1 py-3 text-sm font-bold text-blue-600 border-b-2 border-blue-600 bg-white transition-colors">
+                            Exact Match (DOI)
                         </button>
-                        <button type="submit"
-                            class="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-white bg-slate-800 hover:bg-slate-900 rounded-md shadow-sm">
-                            Create & Enter
+                        <button id="tab-text"
+                            class="flex-1 py-3 text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors">
+                            Semantic Search (Text)
                         </button>
                     </div>
-                </div>
-            </form>
-        </div>
-    </div>
 
-    <div id="modalEditKB"
-        class="fixed inset-0 bg-slate-900/50 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
-        <div
-            class="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden transform scale-95 transition-transform">
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 class="text-lg font-bold text-slate-800">Edit Knowledge Base</h3>
-                <button id="btnCloseEditModal" class="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
-            </div>
-            <form id="formEditKB" class="p-6 space-y-4">
-                <input type="hidden" id="editKbId">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Name</label>
-                    <input type="text" id="editKbName" required
-                        class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                    <textarea id="editKbDesc" rows="3"
-                        class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500"></textarea>
-                </div>
-                <div class="pt-4 flex justify-end gap-3 border-t border-slate-100">
-                    <button type="button" id="btnCancelEditModal"
-                        class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
-                    <button type="submit"
-                        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm">Save
-                        Changes</button>
-                </div>
-            </form>
-        </div>
-    </div>
+                    <div class="p-4 md:p-6">
+                        <div id="view-doi" class="space-y-4">
+                            <label class="block text-sm font-medium text-slate-700">Enter Document Object Identifier
+                                (DOI)</label>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <input type="text" id="doi-input" placeholder="e.g., 10.1371/journal.pone.0115069"
+                                    class="flex-1 px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                <button id="btn-search-doi"
+                                    class="bg-slate-800 hover:bg-slate-900 text-white px-6 py-2 rounded-md text-sm font-medium transition-colors shadow-sm w-full sm:w-auto">
+                                    Resolve DOI
+                                </button>
+                            </div>
+                        </div>
 
-    <div id="modalConfirm"
-        class="fixed inset-0 bg-slate-900/50 z-[70] hidden flex items-center justify-center backdrop-blur-sm p-4">
-        <div
-            class="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden transform scale-95 transition-transform">
-            <div class="p-6 text-center">
-                <div
-                    class="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
-                        </path>
-                    </svg>
+                        <div id="view-text" class="space-y-4 hidden">
+                            <div class="flex flex-col sm:flex-row gap-4">
+                                <div class="flex-1">
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Search Query</label>
+                                    <input type="text" id="text-input" placeholder="Keywords or concepts..."
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                                </div>
+                                <div class="w-full sm:w-1/3">
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Target Source</label>
+                                    <select id="source-select"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+                                        <option value="">All Sources (Parallel)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex justify-end pt-2">
+                                <button id="btn-search-text"
+                                    class="bg-slate-800 hover:bg-slate-900 text-white px-6 py-2 rounded-md text-sm font-medium transition-colors shadow-sm w-full sm:w-auto">
+                                    Search
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <h3 id="confirmTitle" class="text-lg font-bold text-slate-800 mb-2"></h3>
-                <p id="confirmMessage" class="text-sm text-slate-500 mb-6"></p>
-                <div class="flex gap-3">
-                    <button id="btnCancelConfirm"
-                        class="flex-1 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-md">Cancel</button>
-                    <button id="btnAcceptConfirm"
-                        class="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md">Delete</button>
+
+                <div id="discovery-results" class="space-y-4"></div>
+            </div>
+
+            <div class="lg:col-span-1">
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden sticky top-6">
+                    <div class="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center">
+                            <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            Active Downloads
+                        </h3>
+                        <span id="taskLimitsInfo"
+                            class="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded">0
+                            / 10</span>
+                    </div>
+                    <div id="taskList" class="p-2 space-y-2 max-h-[calc(100vh-250px)] overflow-y-auto">
+                        <div class="p-6 text-center text-sm text-slate-400">
+                            No active tasks.
+                        </div>
+                    </div>
                 </div>
             </div>
+
         </div>
-    </div>
+    </main>
 
     <div id="settingsPanel"
         class="fixed inset-y-0 right-0 w-full sm:w-96 bg-white shadow-2xl transform translate-x-full transition-transform duration-300 z-[60] flex flex-col border-l border-slate-200">
@@ -187,12 +140,14 @@
         </div>
     </div>
 
+    <script src="/assets/js/ui.js"></script>
     <script>
         $(document).ready(function () {
-            $('#displayUser').text(getAuthToken());
-            $('#sidebar-container').load('/components/sidebar.html');
+            $('#displayUser').text(getAuthToken()); //
+            UI.loadSidebar(); // Carga centralizada y limpia
         });
     </script>
+
 </body>
 
 </html>
