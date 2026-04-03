@@ -25,7 +25,7 @@ class IngestionRequest(BaseModel):
     """
     doi: str
     kb_id: str
-    title: str
+    title: Optional[str] = None
     
 
 class IngestionResponse(BaseModel):
@@ -68,10 +68,12 @@ async def start_ingestion(
     ticket_id = str(uuid.uuid4())
     downloads_db = db.dict("downloads")
     
+    display_title = payload.title if payload.title else f"Resolving DOI: {payload.doi}..."
+    
     downloads_db[ticket_id] = {
         "status": DownloadStatus.PENDING.value,
         "doi": payload.doi,
-        "title": payload.title,
+        "title": display_title,
         "kb_id": payload.kb_id,
         "user_id": user_id
     }

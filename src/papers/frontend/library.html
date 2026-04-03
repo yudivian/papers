@@ -7,7 +7,6 @@
     <title>Papers AI Engine - Workspace</title>
     <script src="/assets/js/tailwind-browser.js"></script>
     <script src="/assets/js/jquery-4.0.0.js"></script>
-    <script src="/assets/js/ui.js"></script>
     <script src="/assets/js/auth.js"></script>
     <script>requireAuth();</script>
     <script src="/assets/js/api.js"></script>
@@ -187,11 +186,12 @@
             <div class="w-full md:w-2/3 p-4 md:p-6 overflow-y-auto flex-1" id="dynamicFormContainer"></div>
         </div>
     </div>
-
+    
+    <script src="/assets/js/ui.js"></script>
     <script>
        $(document).ready(function () {
             $('#displayUser').text(getAuthToken()); //
-            UI.loadSidebar(); // Carga centralizada y limpia
+            UI.loadSidebar(); 
         });
     </script>
 </body>
