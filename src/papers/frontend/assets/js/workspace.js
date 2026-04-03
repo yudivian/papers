@@ -5,17 +5,29 @@
 
 let confirmActionCallback = null;
 
-$(document).ready(function() {
+$(document).ready(function () {
     // 1. Initial Load
+    // 1. Initial Load
+    if ($('#component-registry').length === 0) {
+        $('body').append('<div id="component-registry" class="hidden"></div>');
+        
+        // TRUCO ANTI-CACHÉ: Le añadimos la hora exacta a la URL para que el navegador 
+        // crea que es un archivo nuevo y se vea obligado a descargarlo de tu disco.
+        const cacheBuster = '?v=' + new Date().getTime();
+        
+        $('#component-registry').load('/components/doi_card.html' + cacheBuster, function() {
+             console.log("Templates loaded successfully (Cache Busted!)");
+        });
+    }
     loadKBs();
 
     // 2. KB Modal interactions
     $('#btnNewKB').on('click', openModal);
     $('#btnCloseModal, #btnCancelModal').on('click', closeModal);
-    
+
     // 3. Form submission
     // 3. Form submission and Create buttons
-    $('#btnCreateStay').on('click', function(e) {
+    $('#btnCreateStay').on('click', function (e) {
         if ($('#formNewKB')[0].checkValidity()) {
             e.preventDefault();
             createKB(false); // false = no entrar
@@ -24,7 +36,7 @@ $(document).ready(function() {
         }
     });
 
-    $('#formNewKB').on('submit', function(e) {
+    $('#formNewKB').on('submit', function (e) {
         e.preventDefault(); // El botón "Create & Enter" (type=submit) activa esto
         createKB(true); // true = entrar automáticamente
     });
@@ -34,13 +46,13 @@ $(document).ready(function() {
 
     // 5. Confirm Modal bindings
     $('#btnCancelConfirm').on('click', closeConfirmModal);
-    $('#btnAcceptConfirm').on('click', function() {
+    $('#btnAcceptConfirm').on('click', function () {
         if (confirmActionCallback) confirmActionCallback();
         closeConfirmModal();
     });
 
     // Mobile Sidebar toggle
-    $(document).on('click', '#openSidebarMobileBtn', function() {
+    $(document).on('click', '#openSidebarMobileBtn', function () {
         $('#mobileSidebarOverlay').removeClass('hidden');
         setTimeout(() => {
             $('#mobileSidebarOverlay').removeClass('opacity-0').addClass('opacity-100');
@@ -50,7 +62,7 @@ $(document).ready(function() {
 
     // (Debajo de los listeners que ya tienes)
     $('#btnCloseEditModal, #btnCancelEditModal').on('click', closeEditModal);
-    $('#formEditKB').on('submit', function(e) {
+    $('#formEditKB').on('submit', function (e) {
         e.preventDefault();
         executeEdit();
     });
@@ -60,9 +72,9 @@ function loadKBs() {
     const grid = $('#workspace-grid');
     grid.html('<p class="text-slate-500 col-span-full text-center py-10">Loading knowledge bases...</p>');
 
-    $.get('/kbs').done(function(kbs) {
+    $.get('/kbs').done(function (kbs) {
         grid.empty();
-        
+
         if (kbs.length === 0) {
             grid.html(`
                 <div class="col-span-full bg-white border border-slate-200 border-dashed rounded-xl p-12 text-center">
@@ -75,7 +87,7 @@ function loadKBs() {
 
         kbs.forEach(kb => {
             const docCount = kb.document_ids ? kb.document_ids.length : 0;
-            
+
             const card = $(`
                 <div class="relative bg-white border border-slate-200 rounded-xl p-6 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer group flex flex-col h-full">
                     <div class="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
@@ -99,22 +111,22 @@ function loadKBs() {
                     </div>
                 </div>
             `);
-            
-            card.on('click', () => showDetail(kb));
-            
-            card.find('.btn-edit-card').on('click', function(e) {
-                e.stopPropagation(); 
+
+            card.on('click', () => loadKBDetail(kb.kb_id || kb.id));
+
+            card.find('.btn-edit-card').on('click', function (e) {
+                e.stopPropagation();
                 openEditModal(kb);
             });
 
-            card.find('.btn-delete-card').on('click', function(e) {
-                e.stopPropagation(); 
+            card.find('.btn-delete-card').on('click', function (e) {
+                e.stopPropagation();
                 requestDeleteKB(kb);
             });
 
             grid.append(card);
         });
-    }).fail(function() {
+    }).fail(function () {
         grid.html('<div class="col-span-full p-8 text-center bg-red-50 border border-red-100 rounded-xl text-red-600">Error loading projects. Check if the backend is running.</div>');
     });
 }
@@ -129,23 +141,23 @@ function createKB(enterAfterCreation) {
         type: 'POST',
         contentType: 'application/json',
         data: JSON.stringify({ name: name, description: desc }),
-        success: function(response) {
+        success: function (response) {
             closeModal();
             window.showToast(`Project "${name}" created.`, 'success');
-            
+
             if (enterAfterCreation) {
-                loadKBs(); 
+                loadKBs();
                 showDetail({
-                    id: response.kb_id || name, 
+                    id: response.kb_id || name,
                     name: name,
                     description: desc,
-                    document_ids: []
+                    documents: []
                 });
             } else {
                 loadKBs();
             }
         },
-        error: function(err) {
+        error: function (err) {
             window.showToast('Error creating project.', 'error');
             console.error(err);
         }
@@ -153,7 +165,7 @@ function createKB(enterAfterCreation) {
 }
 
 function requestDeleteKB(kb) {
-    const targetId = kb.id || kb.kb_id || kb.name; 
+    const targetId = kb.id || kb.kb_id || kb.name;
 
     if (!targetId) {
         window.showToast('Error: Could not identify the Knowledge Base ID.', 'error');
@@ -163,7 +175,7 @@ function requestDeleteKB(kb) {
     openConfirmModal(
         'Delete Knowledge Base',
         `Are you sure you want to delete the project <br><b class="text-slate-800">"${kb.name}"</b>?<br><br>Documents inside will remain safely on your disk.`,
-        function() {
+        function () {
             executeDelete(targetId);
         }
     );
@@ -173,12 +185,12 @@ function executeDelete(kbId) {
     $.ajax({
         url: `/kbs/${kbId}`,
         type: 'DELETE',
-        success: function() {
+        success: function () {
             window.showToast('Project deleted successfully.', 'success');
-            showGrid(); 
-            loadKBs();  
+            showGrid();
+            loadKBs();
         },
-        error: function(err) {
+        error: function (err) {
             window.showToast('Failed to delete project.', 'error');
             console.error(err);
         }
@@ -187,36 +199,14 @@ function executeDelete(kbId) {
 
 // --- View Logic ---
 
-function showDetail(kb) {
-    $('#workspace-grid').addClass('hidden');
-    $('#workspace-detail').removeClass('hidden');
 
-    $('#detailTitle').text(kb.name);
-    $('#detailDesc').text(kb.description || 'No description provided.');
-    
-    // Bind delete button from inside the detail view
-    $('#btnDeleteKB').off('click').on('click', () => requestDeleteKB(kb));
-    $('#btnEditKB').off('click').on('click', () => openEditModal(kb));
 
-    const list = $('#detailDocsList');
-    list.empty();
 
-    if (!kb.document_ids || kb.document_ids.length === 0) {
-        list.append('<li class="text-sm text-slate-500 italic">This project is empty. Add documents via Ingestion.</li>');
-    } else {
-        kb.document_ids.forEach(doi => {
-            list.append(`
-                <li class="bg-white border border-slate-100 px-4 py-3 rounded text-sm text-slate-700 font-mono shadow-sm">
-                    ${doi}
-                </li>
-            `);
-        });
-    }
-}
 
 function showGrid() {
     $('#workspace-detail').addClass('hidden');
     $('#workspace-grid').removeClass('hidden');
+    loadKBs();
 }
 
 // --- Modals Logic ---
@@ -244,8 +234,8 @@ function openConfirmModal(title, message, onConfirm) {
 
 function closeConfirmModal() {
     $('#modalConfirm > div').removeClass('scale-100').addClass('scale-95');
-    setTimeout(() => { 
-        $('#modalConfirm').addClass('hidden'); 
+    setTimeout(() => {
+        $('#modalConfirm').addClass('hidden');
         confirmActionCallback = null;
     }, 150);
 }
@@ -262,21 +252,12 @@ function openEditModal(kb) {
 
     // Quitamos el '.css('display', 'flex')' que causaba el bug. 
     // Solo removemos la clase hidden.
-    $('#modalEditKB').removeClass('hidden'); 
-    
-    // Animación de entrada
-    setTimeout(() => { 
-        $('#modalEditKB > div').removeClass('scale-95').addClass('scale-100'); 
-    }, 10);
-}
+    $('#modalEditKB').removeClass('hidden');
 
-function closeEditModal() {
-    $('#modalEditKB > div').removeClass('scale-100').addClass('scale-95');
-    
-    setTimeout(() => { 
-        // Agregamos hidden y, por si acaso quedó algún residuo, borramos el atributo style
-        $('#modalEditKB').addClass('hidden').css('display', ''); 
-    }, 150);
+    // Animación de entrada
+    setTimeout(() => {
+        $('#modalEditKB > div').removeClass('scale-95').addClass('scale-100');
+    }, 10);
 }
 
 function closeEditModal() {
@@ -296,18 +277,18 @@ function executeEdit() {
 
     $.ajax({
         url: `/kbs/${kbId}`,
-        type: 'PATCH', 
+        type: 'PATCH',
         contentType: 'application/json',
         data: JSON.stringify({ name: newName, description: newDesc }),
-        success: function(updatedKb) {
+        success: function (updatedKb) {
             closeEditModal();
             if (window.showToast) window.showToast('Project updated successfully.', 'success');
-            
+
             // Si estamos en la vista de detalle, actualizamos los textos
             if (!$('#workspace-detail').hasClass('hidden')) {
                 $('#detailTitle').text(updatedKb.name);
                 $('#detailDesc').text(updatedKb.description || 'No description provided.');
-                
+
                 // Actualizamos los botones del detalle con el nuevo objeto
                 $('#btnEditKB').off('click').on('click', () => openEditModal(updatedKb));
                 $('#btnDeleteKB').off('click').on('click', () => requestDeleteKB(updatedKb));
@@ -315,9 +296,217 @@ function executeEdit() {
 
             loadKBs(); // Refresca el grid
         },
-        error: function(err) {
+        error: function (err) {
             if (window.showToast) window.showToast('Failed to update project. Check backend logs.', 'error');
             console.error("Error updating KB:", err);
         }
     });
+}
+
+
+/**
+ * Muestra el detalle de una Knowledge Base usando templates.
+ */
+function loadKBDetail(kbId) {
+    $.get(`/kbs/${kbId}`).done(function (fullKb) {
+        showDetail(fullKb);
+    }).fail(function () {
+        window.showToast('Error loading project details.', 'error');
+    });
+}
+
+
+function showDetail(kb) {
+    $('#workspace-grid').addClass('hidden');
+    $('#workspace-detail').removeClass('hidden');
+
+    $('#detailTitle').text(kb.name);
+    $('#detailDesc').text(kb.description || 'No description provided.');
+
+    $('#btnEditKB').off('click').on('click', () => openEditModal(kb));
+    $('#btnDeleteKB').off('click').on('click', () => requestDeleteKB(kb));
+
+    const $container = $('#kb-documents-container').empty();
+
+    if (!kb.documents || kb.documents.length === 0) {
+        $container.append('<p class="text-slate-400 text-sm italic p-4">This library is empty.</p>');
+    } else {
+        kb.documents.forEach(doc => {
+            renderKBDocument(doc, kb.kb_id);
+        });
+    }
+}
+
+function renderKBDocument(doc, kbId) {
+    const $tpl = $('#tpl-kb-document-item').prop('content');
+    const $item = $(document.importNode($tpl, true));
+    const $card = $item.find('.js-doc-card');
+
+    $card.attr('data-doi', doc.doi);
+
+    // 1. Datos Principales
+    $item.find('.js-doc-title').text(doc.title || 'Untitled Document');
+    $item.find('.js-doc-authors').text(doc.authors && doc.authors.length > 0 ? doc.authors.join(', ') : 'Unknown Authors');
+    $item.find('.js-doc-abstract').text(doc.abstract || 'No abstract available.');
+
+    // 2. Badges Superiores (Condicionales)
+    if (doc.type) {
+        $item.find('.js-doc-type').text(doc.type).removeClass('hidden');
+    }
+    if (doc.year) { // <--- CAMBIADO A doc.year
+        $item.find('.js-doc-year').text(doc.year).removeClass('hidden');
+    }
+    if (doc.file_size) { // <--- CAMBIADO A doc.file_size
+        $item.find('.js-doc-size').text(formatBytes(doc.file_size)).removeClass('hidden');
+    }
+    if (doc.doi) {
+        const doiLink = doc.doi.startsWith('http') ? doc.doi : `https://doi.org/${doc.doi}`;
+        $item.find('.js-doc-doi').text(doc.doi).attr('href', doiLink).removeClass('hidden');
+    }
+
+    // 3. Metadatos Secundarios
+    if (doc.venue || doc.publisher) {
+        $item.find('.js-doc-venue').text(doc.venue || doc.publisher);
+        $item.find('.js-doc-venue-container').removeClass('hidden');
+    }
+    if (doc.ingested_at) {
+        const date = new Date(doc.ingested_at).toLocaleDateString();
+        $item.find('.js-doc-added').text(date);
+        $item.find('.js-doc-added-container').removeClass('hidden');
+    }
+
+    // 4. Topics (Palabras Clave)
+    if (doc.keywords && doc.keywords.length > 0) { 
+        const $topicsContainer = $item.find('.js-doc-topics');
+        doc.keywords.forEach(keyword => {
+            $topicsContainer.append(
+                `<span class="px-2 py-1 bg-slate-100 border border-slate-200 text-slate-600 rounded text-[10px] uppercase font-bold tracking-wider">${keyword}</span>`
+            );
+        });
+        $item.find('.js-doc-topics-container').removeClass('hidden');
+    }
+
+    // 5. EVENTOS: UI y Acciones
+    $item.find('.js-btn-toggle-meta').on('click', function () {
+        $card.find('.js-doc-meta-panel').slideToggle(250);
+    });
+
+    $item.find('.js-btn-download-doc').on('click', function(e) {
+        e.stopPropagation();
+        const url = `/documents/${encodeURIComponent(doc.doi)}/file`;
+        
+        $.ajax({
+            url: url,
+            type: 'GET',
+            xhrFields: { responseType: 'blob' },
+            success: function(blob, status, xhr) {
+                let filename = `${doc.title || 'document'}.pdf`; 
+                const disposition = xhr.getResponseHeader('Content-Disposition');
+                if (disposition && disposition.indexOf('attachment') !== -1) {
+                    const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+                    if (matches != null && matches[1]) filename = matches[1].replace(/['"]/g, '');
+                }
+                const blobUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = blobUrl;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(blobUrl);
+                document.body.removeChild(a);
+            },
+            error: function() {
+                if (window.showToast) window.showToast('Error downloading file.', 'error');
+            }
+        });
+    });
+
+    $item.find('.js-btn-unlink-doc').on('click', function () {
+        openConfirmModal('Remove Document', `Unlink "${doc.title}"?`, function () {
+            $.ajax({
+                url: `/kbs/${kbId}/documents/${encodeURIComponent(doc.doi)}`,
+                type: 'DELETE',
+                success: function () {
+                    $card.fadeOut(300, () => $card.remove());
+                    if (window.showToast) window.showToast('Document removed', 'success');
+                }
+            });
+        });
+    });
+
+    $item.find('.js-btn-move-doc').on('click', () => openTransferModal('transfer', doc.doi, kbId));
+    $item.find('.js-btn-copy-doc').on('click', () => openTransferModal('copy', doc.doi, kbId));
+
+    $('#kb-documents-container').append($item);
+}
+
+function openTransferModal(actionType, doi, sourceKbId) {
+    // CORRECCIÓN 2: Si el modal no existe en el DOM, lo sacamos del template
+    if ($('#modal-kb-select').length === 0) {
+        const $tpl = $('#tpl-kb-modal').prop('content');
+        $('body').append(document.importNode($tpl, true));
+
+        // Conectamos el botón cancelar del nuevo modal
+        $('#btn-modal-cancel').on('click', function() {
+            $('#modal-kb-select').addClass('hidden');
+        });
+    }
+
+    // CORRECCIÓN 3: Llenar el dropdown con las KBs
+    const $dropdown = $('#modal-kb-dropdown').empty();
+    $dropdown.append('<option value="" disabled selected>Select a Knowledge Base...</option>');
+    
+    // Pedimos las KBs para que el usuario pueda elegir destino
+    $.get('/kbs').done(function(kbs) {
+        kbs.forEach(kb => {
+            const id = kb.kb_id || kb.id;
+            // No mostramos la KB en la que ya estamos
+            if (id !== sourceKbId) {
+                $dropdown.append(`<option value="${id}">${kb.name}</option>`);
+            }
+        });
+    });
+
+    // Cambiar el texto del botón y deshabilitarlo hasta que elija una opción
+    $('#btn-modal-download').prop('disabled', true).text(actionType === 'copy' ? 'Copy Document' : 'Move Document');
+    $dropdown.off('change').on('change', function() {
+        $('#btn-modal-download').prop('disabled', false);
+    });
+
+    // Ahora sí mostramos el modal
+    $('#modal-kb-select').removeClass('hidden');
+
+    $('#btn-modal-download').off('click').on('click', function () {
+        const targetKbId = $('#modal-kb-dropdown').val();
+        if (!targetKbId) return;
+
+        $.ajax({
+            url: `/kbs/${targetKbId}/${actionType}`,
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                dois: [doi],
+                source_kb_id: sourceKbId
+            }),
+            success: function () {
+                $('#modal-kb-select').addClass('hidden');
+                
+                if (actionType === 'transfer') {
+                    // Si se mueve, desaparece de la vista actual usando el data-doi
+                    $(`[data-doi="${doi}"]`).fadeOut(300, function() { $(this).remove(); });
+                }
+                if (window.showToast) window.showToast(`Document ${actionType}ed successfully`, 'success');
+            }
+        });
+    });
+}
+
+function formatBytes(bytes, decimals = 1) {
+    if (!+bytes) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }

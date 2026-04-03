@@ -15,7 +15,6 @@
     <div class="border-t border-slate-700 pt-4 space-y-2">
         <button id="openSettingsBtn" class="w-full py-2 px-4 text-left text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex justify-between items-center">
             <span>Settings</span>
-            <span class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">New</span>
         </button>
         <button onclick="logoutUser()" class="w-full py-2 px-4 text-left text-sm font-medium text-red-400 hover:text-red-300 hover:bg-slate-800 rounded-lg transition-colors">
             Sign Out
@@ -24,7 +23,6 @@
 </div>
 
 <script>
-    // Lógica rápida para el menú móvil
     $('#closeSidebarBtn, #mobileSidebarOverlay').on('click', function() {
         $('#mainSidebar').addClass('-translate-x-full');
         $('#mobileSidebarOverlay').removeClass('opacity-100').addClass('opacity-0');

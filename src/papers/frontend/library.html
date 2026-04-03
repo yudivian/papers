@@ -11,7 +11,7 @@
     <script>requireAuth();</script>
     <script src="/assets/js/api.js"></script>
     <script src="/assets/js/settings.js"></script>
-    <script src="/assets/js/workspace.js"></script>
+    
 </head>
 
 <body class="bg-slate-50 min-h-screen overflow-x-hidden font-sans">
@@ -75,7 +75,7 @@
                 <h3
                     class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">
                     Documents inside</h3>
-                <ul id="detailDocsList" class="space-y-2"></ul>
+                <div id="kb-documents-container" class="grid grid-cols-1 gap-4"></div>
             </div>
         </div>
     </main>
@@ -187,6 +187,7 @@
         </div>
     </div>
     
+    <script src="/assets/js/workspace.js"></script>
     <script src="/assets/js/ui.js"></script>
     <script>
        $(document).ready(function () {

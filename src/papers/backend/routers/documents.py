@@ -139,12 +139,37 @@ async def cleanup_documents(
         if payload.specific_dois is not None and doi not in payload.specific_dois:
             continue
 
+        # DENTRO DEL BUCLE DE LIMPIEZA: for doi, doc_data in docs_db.items():
         if payload.before_date:
-            storage_uri = doc_data.get("storage_uri", "")
-            if await storage.exists(storage_uri):
-                mtime = await storage.get_modified_time(storage_uri)
-                if mtime > payload.before_date:
-                    continue
+            doc_date = None
+            
+            # 1. Intentar leer desde la Base de Datos (Ruta rápida)
+            ingested_str = doc_data.get("ingested_at")
+            if ingested_str:
+                # Convertir el string ISO de la BD a objeto datetime
+                # (Aseguramos compatibilidad con el formato UTC)
+                if isinstance(ingested_str, str):
+                    doc_date = datetime.fromisoformat(ingested_str.replace("Z", "+00:00"))
+                else:
+                    doc_date = ingested_str
+            
+            # 2. Fallback para documentos Legacy (Ruta lenta + Auto-Sanación)
+            else:
+                storage_uri = doc_data.get("storage_uri", "")
+                if await storage.exists(storage_uri):
+                    doc_date = await storage.get_modified_time(storage_uri)
+                    
+                    # ¡AUTO-SANACIÓN! Guardamos la fecha para no volver al disco la próxima vez
+                    doc_data["ingested_at"] = doc_date.isoformat()
+                    docs_db[doi] = doc_data 
+                else:
+                    # Si no hay fecha en BD y el archivo físico no existe, 
+                    # forzamos su eliminación para limpiar la basura
+                    pass 
+
+            # 3. Comparación (Si es más nuevo que el límite, lo saltamos)
+            if doc_date and doc_date > payload.before_date:
+                continue
 
         dois_to_delete.add(doi)
 

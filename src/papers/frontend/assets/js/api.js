@@ -11,7 +11,15 @@ const API_BASE_URL = 'http://localhost:8000/api/v1';
 $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
     if (!options.url.startsWith('http') && !options.url.includes('.html')) {
         const path = options.url.startsWith('/') ? options.url : '/' + options.url;
-        options.url = API_BASE_URL + path;
+        
+        // Si la URL ya trae /api/v1, solo le pegamos la base (ej. http://localhost:8000)
+        if (path.startsWith('/api/v1')) {
+            const baseUrl = API_BASE_URL.replace('/api/v1', '');
+            options.url = baseUrl + path;
+        } else {
+            // Si no lo trae, se lo ponemos
+            options.url = API_BASE_URL + path;
+        }
     }
 });
 

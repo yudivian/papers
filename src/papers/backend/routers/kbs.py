@@ -230,18 +230,17 @@ async def transfer_documents(
         raise HTTPException(status_code=403, detail="Access denied during transfer operation.")
 
     source_docs = set(source_kb.get("document_ids", []))
-    dest_docs = dest_kb.get("document_ids", [])
+    dest_docs = set(dest_kb.get("document_ids", [])) 
     
     transferred = 0
     for doi in payload.dois:
         if doi in source_docs:
-            source_docs.remove(doi)
-            if doi not in dest_docs:
-                dest_docs.append(doi)
+            source_docs.remove(doi)  
+            dest_docs.add(doi)      
             transferred += 1
 
     source_kb["document_ids"] = list(source_docs)
-    dest_kb["document_ids"] = dest_docs
+    dest_kb["document_ids"] = list(dest_docs)
     
     kbs_db[payload.source_kb_id] = source_kb
     kbs_db[kb_id] = dest_kb
@@ -271,3 +270,63 @@ async def update_knowledge_base(
 
     kbs_db[kb_id] = kb_data
     return KBResponse.model_validate(kb_data)
+
+
+@router.post("/{kb_id}/copy", response_model=KBTransferResponse)
+async def copy_documents(
+    kb_id: str,
+    payload: KBTransferRequest,
+    current_user = Depends(get_current_user),
+    db: BeaverDB = Depends(get_db)
+) -> KBTransferResponse:
+    """Copy documents from one KB to another without deleting them from the source."""
+    kbs_db = db.dict("knowledge_bases")
+    dest_kb = kbs_db.get(kb_id)
+    source_kb = kbs_db.get(payload.source_kb_id)
+    
+    user_id = current_user.user_id if hasattr(current_user, 'user_id') else current_user
+
+    if not dest_kb or dest_kb.get("owner_id") != user_id:
+        raise HTTPException(status_code=404, detail="Target Knowledge Base not found.")
+    
+    if not source_kb or source_kb.get("owner_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied to source KB.")
+
+    source_docs = set(source_kb.get("document_ids", []))
+    dest_docs = set(dest_kb.get("document_ids", [])) 
+    
+    copied = 0
+    for doi in payload.dois:
+        if doi in source_docs:
+            dest_docs.add(doi)
+            copied += 1
+
+    dest_kb["document_ids"] = list(dest_docs)
+    kbs_db[kb_id] = dest_kb
+
+    return KBTransferResponse(transferred_count=copied)
+
+
+@router.delete("/{kb_id}/documents/{doi:path}")
+async def unlink_document_from_kb(
+    kb_id: str,
+    doi: str,
+    current_user = Depends(get_current_user),
+    db: BeaverDB = Depends(get_db)
+):
+    """Removes the reference to a document in a specific KB."""
+    kbs_db = db.dict("knowledge_bases")
+    kb_data = kbs_db.get(kb_id)
+    
+    user_id = current_user.user_id if hasattr(current_user, 'user_id') else current_user
+
+    if not kb_data or kb_data.get("owner_id") != user_id:
+        raise HTTPException(status_code=404, detail="Knowledge Base not found.")
+
+    doc_ids = kb_data.get("document_ids", [])
+    if doi in doc_ids:
+        doc_ids.remove(doi)
+        kb_data["document_ids"] = doc_ids
+        kbs_db[kb_id] = kb_data
+        
+    return {"status": "unlinked"}

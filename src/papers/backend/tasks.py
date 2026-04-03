@@ -20,6 +20,7 @@ from papers.backend.models import GlobalDocumentMeta, DownloadStatus
 from papers.backend.data_sources import get_data_source
 from papers.backend.storages import get_storage
 from papers.backend.search import SemanticEngine
+from papers.backend.deps import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def get_task_infrastructure():
     db = BeaverDB(settings.database.file)
     return settings, db
 
-manager = Manager(BeaverDB(Settings.load_from_yaml().database.file))
+manager = Manager(get_db())
 
 async def _download_asset(url: str, expected_mime: str) -> Tuple[bytes, str]:
     """

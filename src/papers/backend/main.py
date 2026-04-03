@@ -45,3 +45,10 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+
+@app.get("/health", tags=["System"])
+async def health_check() -> dict[str, str]:
+    """
+    Root level health check endpoint for system monitoring and load balancers.
+    """
+    return {"status": "operational", "engine": "papers-ai"}

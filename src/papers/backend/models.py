@@ -79,6 +79,10 @@ class GlobalDocumentMeta(BaseModel):
     abstract: Optional[str] = Field(None, description="Full reconstructed paper abstract.")
     keywords: List[str] = Field(default_factory=list, description="Extracted semantic concepts.")
     institutions: List[str] = Field(default_factory=list, description="Unique author affiliations.")
+    ingested_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), 
+        description="Timestamp indicating when the document was added to the system."
+    )
 
 class DownloadRequest(BaseModel):
     """

@@ -6,11 +6,13 @@
                     <h3 class="js-card-title text-lg font-bold text-slate-800 leading-snug"></h3>
                     <p class="js-card-authors text-sm text-slate-500 mt-1"></p>
                 </div>
-                <span class="js-card-doi px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-200 font-mono"></span>
+                <span
+                    class="js-card-doi px-2 py-1 bg-slate-50 text-slate-500 text-xs rounded border border-slate-200 font-mono"></span>
             </div>
             <p class="js-card-abstract mt-4 text-sm text-slate-600 leading-relaxed hidden"></p>
             <div class="mt-5 flex gap-3 border-t border-slate-100 pt-4">
-                <button class="js-btn-confirm bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md text-sm font-medium transition-colors">
+                <button
+                    class="js-btn-confirm bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-md text-sm font-medium transition-colors">
                     Confirm & Download
                 </button>
             </div>
@@ -18,19 +20,24 @@
     </template>
 
     <template id="tpl-kb-modal">
-        <div id="modal-kb-select" class="fixed inset-0 z-[100] hidden bg-slate-900/60 flex items-center justify-center backdrop-blur-sm">
+        <div id="modal-kb-select"
+            class="fixed inset-0 z-[100] hidden bg-slate-900/60 flex items-center justify-center backdrop-blur-sm">
             <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 border border-slate-200 mx-4">
                 <h3 class="text-xl font-bold text-slate-800 mb-2 text-left">Select Destination</h3>
                 <p class="text-sm text-slate-500 mb-5 text-left">Where should we store this paper?</p>
-                
-                <label class="block text-left text-xs font-semibold text-slate-400 uppercase mb-1">Knowledge Base</label>
-                <select id="modal-kb-dropdown" class="w-full border border-slate-300 rounded-lg p-2.5 text-slate-700 bg-slate-50 mb-6 outline-none focus:ring-2 focus:ring-blue-500">
+
+                <label class="block text-left text-xs font-semibold text-slate-400 uppercase mb-1">Knowledge
+                    Base</label>
+                <select id="modal-kb-dropdown"
+                    class="w-full border border-slate-300 rounded-lg p-2.5 text-slate-700 bg-slate-50 mb-6 outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="" disabled selected>Select a Knowledge Base...</option>
                 </select>
 
                 <div class="flex justify-end gap-3">
-                    <button id="btn-modal-cancel" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Cancel</button>
-                    <button id="btn-modal-download" disabled class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
+                    <button id="btn-modal-cancel"
+                        class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Cancel</button>
+                    <button id="btn-modal-download" disabled
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
                         Start Download
                     </button>
                 </div>
@@ -39,15 +46,122 @@
     </template>
 
     <template id="tpl-task-item">
-        <div class="js-task-card p-3 bg-white border border-slate-200 rounded-lg mb-2 shadow-sm">
-            <div class="flex justify-between items-center mb-2">
-                <span class="js-task-title font-medium text-slate-700 truncate text-xs pr-2"></span>
-                <span class="js-task-status text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">PENDING</span>
+        <div class="js-task-card p-3 bg-white border border-slate-200 rounded-lg mb-2 shadow-sm group">
+            <div class="flex justify-between items-start gap-2">
+                <div class="flex-1 min-w-0">
+                    <p class="js-task-title font-medium text-slate-700 truncate text-[11px] leading-tight"></p>
+                    <div class="flex items-center gap-1.5 mt-1">
+                        <span class="js-task-bullet w-2 h-2 rounded-full bg-slate-300"></span>
+                        <span
+                            class="js-task-status-text text-[9px] font-bold uppercase text-slate-400 tracking-tighter">PENDING</span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                        class="js-btn-cancel-task hidden p-1.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded transition-colors"
+                        title="Cancel Download">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </button>
+
+                    <button
+                        class="js-btn-delete-task hidden p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                        title="Remove from list">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
             </div>
-            <div class="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-                <div class="js-task-progress bg-blue-500 h-1 transition-all duration-500" style="width: 5%"></div>
-            </div>
-            <p class="js-task-error text-[10px] text-red-500 mt-2 hidden"></p>
+            <p
+                class="js-task-error text-[9px] text-red-500 mt-1.5 hidden leading-tight italic border-t border-red-50 pt-1">
+            </p>
         </div>
     </template>
+
+    <div id="modal-custom-confirm"
+        class="fixed inset-0 z-[200] hidden bg-slate-900/60 flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 border border-slate-200 mx-4">
+            <h3 class="text-lg font-bold text-slate-800 mb-2 js-confirm-title"></h3>
+            <p class="text-sm text-slate-500 mb-6 js-confirm-message"></p>
+            <div class="flex justify-end gap-3">
+                <button
+                    class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors js-confirm-cancel">Cancel</button>
+                <button
+                    class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium shadow-sm transition-all js-confirm-accept">Yes,
+                    proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <template id="tpl-kb-document-item">
+        <div class="js-doc-card bg-white border border-slate-200 rounded-xl mb-4 shadow-sm hover:shadow-md hover:border-blue-300 transition-all group overflow-hidden">
+            <div class="p-5">
+                <div class="flex justify-between items-start gap-4 mb-2">
+                    <div class="flex-1 cursor-pointer js-btn-toggle-meta" title="Click to view details">
+                        <h4 class="js-doc-title text-base md:text-lg font-bold text-slate-900 leading-snug mb-3"></h4>
+                        
+                        <div class="flex flex-wrap items-center gap-2 text-xs font-medium">
+                            <span class="js-doc-type px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-md hidden"></span>
+                            <span class="js-doc-year px-2.5 py-1 bg-slate-100 text-slate-600 rounded-md hidden"></span>
+                            <span class="js-doc-size px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-md hidden"></span>
+                            <a href="#" target="_blank" class="js-doc-doi px-2.5 py-1 bg-slate-50 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md border border-slate-200 transition-colors hidden" onclick="event.stopPropagation()"></a>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white pl-2">
+                        <button class="js-btn-download-doc p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Download PDF">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        </button>
+                        <button class="js-btn-copy-doc p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Copy to KB">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                        </button>
+                        <button class="js-btn-move-doc p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg" title="Move to KB">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                        </button>
+                        <button class="js-btn-unlink-doc p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Remove from KB">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="js-doc-meta-panel hidden mt-5 pt-5 border-t border-slate-100">
+                    <div class="grid grid-cols-1 gap-5">
+                        
+                        <div>
+                            <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Authors</span>
+                            <p class="js-doc-authors text-sm text-slate-700 font-medium leading-relaxed"></p>
+                        </div>
+                        
+                        <div class="flex flex-wrap gap-8">
+                            <div class="js-doc-venue-container hidden">
+                                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Published In</span>
+                                <p class="js-doc-venue text-sm text-slate-600"></p>
+                            </div>
+                            <div class="js-doc-added-container hidden">
+                                <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Added to cache</span>
+                                <p class="js-doc-added text-sm text-slate-600"></p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Abstract</span>
+                            <p class="js-doc-abstract text-sm text-slate-800 leading-relaxed text-justify"></p>
+                        </div>
+
+                        <div class="js-doc-topics-container hidden pt-2">
+                            <div class="flex flex-wrap gap-2 js-doc-topics"></div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
 </div>
