@@ -15,7 +15,8 @@ from papers.backend.routers import (
     discovery,
     ingestion,
     documents,
-    sources
+    sources,
+    auth
 )
 
 api_router = APIRouter()
@@ -54,4 +55,10 @@ api_router.include_router(
     sources.router, 
     prefix="/sources", 
     tags=["Data Sources"]
+)
+
+api_router.include_router(
+    auth.router, 
+    prefix="/auth", 
+    tags=["Authentication and Provisioning"]
 )

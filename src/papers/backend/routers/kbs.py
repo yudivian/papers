@@ -9,7 +9,7 @@ scoping all operations to the authenticated user's identifier.
 import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from beaver import BeaverDB
 
 from papers.backend.deps import get_current_user, get_db
@@ -55,6 +55,11 @@ class KBTransferResponse(BaseModel):
     Data Transfer Object summarizing a successful document transfer.
     """
     transferred_count: int
+    
+class KBUpdateRequest(BaseModel):
+    """Schema for updating an existing Knowledge Base."""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
 
 @router.get("", response_model=List[KBResponse])
 async def list_knowledge_bases(
@@ -242,3 +247,27 @@ async def transfer_documents(
     kbs_db[kb_id] = dest_kb
 
     return KBTransferResponse(transferred_count=transferred)
+
+@router.patch("/{kb_id}", response_model=KBResponse)
+async def update_knowledge_base(
+    kb_id: str,
+    payload: KBUpdateRequest,
+    current_user = Depends(get_current_user),
+    db: BeaverDB = Depends(get_db)
+) -> KBResponse:
+    """Updates the name and/or description of an existing Knowledge Base."""
+    kbs_db = db.dict("knowledge_bases")
+    kb_data = kbs_db.get(kb_id)
+    
+    user_id = current_user.user_id if hasattr(current_user, 'user_id') else current_user
+
+    if not kb_data or kb_data.get("owner_id") != user_id:
+        raise HTTPException(status_code=404, detail="Knowledge Base not found or access denied.")
+
+    if payload.name is not None:
+        kb_data["name"] = payload.name
+    if payload.description is not None:
+        kb_data["description"] = payload.description
+
+    kbs_db[kb_id] = kb_data
+    return KBResponse.model_validate(kb_data)
