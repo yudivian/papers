@@ -60,6 +60,10 @@ class KBUpdateRequest(BaseModel):
     """Schema for updating an existing Knowledge Base."""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = None
+    
+class AddDocumentsRequest(BaseModel):
+    dois: List[str]
+
 
 @router.get("", response_model=List[KBResponse])
 async def list_knowledge_bases(
@@ -330,3 +334,31 @@ async def unlink_document_from_kb(
         kbs_db[kb_id] = kb_data
         
     return {"status": "unlinked"}
+
+# En src/papers/backend/routers/kbs.py
+
+
+@router.post("/{kb_id}/documents", status_code=200)
+async def add_documents_to_kb(
+    kb_id: str,
+    payload: AddDocumentsRequest,
+    db: BeaverDB = Depends(get_db)
+):
+    """
+    Links documents that already exist in cache
+    to a specific Knowledge Base.
+    """
+    kbs_db = db.dict("knowledge_bases")
+    if kb_id not in kbs_db:
+        raise HTTPException(status_code=404, detail="Knowledge Base not found")
+    
+    kb_data = kbs_db[kb_id]
+    current_docs = set(kb_data.get("document_ids", []))
+    
+    new_dois = [doi for doi in payload.dois if doi not in current_docs]
+    
+    if new_dois:
+        kb_data["document_ids"] = list(current_docs.union(new_dois))
+        kbs_db[kb_id] = kb_data
+        
+    return {"added_count": len(new_dois)}
