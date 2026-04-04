@@ -68,6 +68,7 @@ class GlobalDocumentMeta(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     doi: str = Field(..., description="Standard Digital Object Identifier.")
+    is_official_doi: bool = True
     title: str
     authors: List[str] = Field(default_factory=list)
     year: int

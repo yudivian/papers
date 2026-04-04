@@ -457,12 +457,36 @@ class OpenAlexSource(BaseDataSource):
 
             results = []
             for item in items:
-                # [MAGIA AQUÍ] Aislamos cada documento. Si uno está corrupto, NO tumba la búsqueda entera.
                 try:
+                    # 1. EVALUACIÓN DE IDENTIDAD (El Cambio Clave del MVP)
                     doi_url = item.get("doi")
-                    if not doi_url:
-                        continue
                     
+                    if doi_url:
+                        # Tiene DOI oficial, lo limpiamos y lo marcamos como válido
+                        final_doi = doi_url.replace("https://doi.org/", "")
+                        is_official = True
+                    else:
+                        # NO tiene DOI. Rescatamos el ID de OpenAlex para no perder el paper
+                        oa_id = item.get("id")
+                        if not oa_id:
+                            continue  # Si no tiene ni DOI ni ID de OpenAlex, es basura
+                        final_doi = oa_id.replace("https://openalex.org/", "openalex:")
+                        is_official = False
+
+                    # 2. EXTRACCIÓN DE METADATOS BÁSICOS (Solución a variables no definidas)
+                    title = item.get("title")
+                    if not title:
+                        continue # Un paper sin título no nos sirve
+                        
+                    authors = []
+                    for a in (item.get("authorships") or []):
+                        author_name = a.get("author", {}).get("display_name")
+                        if author_name:
+                            authors.append(author_name)
+                            
+                    if not authors:
+                        continue # Requerimos al menos un autor
+
                     institutions = list({
                         inst.get("display_name", "Unknown") 
                         for a in item.get("authorships", []) or []
@@ -470,14 +494,16 @@ class OpenAlexSource(BaseDataSource):
                         if inst.get("display_name")
                     })
                     
-                    # OpenAlex a veces devuelve concepts como None, lo forzamos a lista vacía
                     raw_concepts = item.get("concepts") or []
+                    keywords = [c.get("display_name") for c in raw_concepts[:10] if isinstance(c, dict) and c.get("display_name")]
                     
+                    # 3. CREACIÓN DEL MODELO CON LA NUEVA BANDERA
                     doc = GlobalDocumentMeta(
-                        doi=doi_url.replace("https://doi.org/", ""),
+                        doi=final_doi,
+                        is_official_doi=is_official,  # <-- Inyectamos la variable del Bloque 1
                         title=title,
                         authors=authors,
-                        year=item.get("publication_year"), # Si es None, que Pydantic lo maneje si lo permite, o pon un fallback razonable
+                        year=item.get("publication_year"), 
                         file_size=0,
                         storage_uri=self._extract_oa_url(item),
                         source=self.name,
@@ -486,6 +512,7 @@ class OpenAlexSource(BaseDataSource):
                         institutions=institutions
                     )
                     results.append(doc)
+                    
                 except Exception as parse_error:
                     self.logger.error(f"⚠️ [OpenAlex] Falló parseo de un documento. Error: {parse_error}. ID Item: {item.get('id')}")
                     continue

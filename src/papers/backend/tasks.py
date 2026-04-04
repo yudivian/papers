@@ -168,17 +168,39 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
             if meta:
                 break
 
-        if not meta or not meta.storage_uri.startswith("http"):
-            raise ValueError("Document metadata is restricted or unavailable.")
+        if not meta:
+            raise ValueError("Document metadata is unavailable.")
+
+        # Manejamos el caso donde storage_uri sea nulo sin que explote
+        storage_url = meta.storage_uri or ""
+
+        # Evaluamos si tenemos un punto de partida válido
+        if not storage_url.startswith("http"):
+            # Si no hay link directo y es un ID inventado, abortamos (CORTAFUEGOS 1)
+            if not getattr(meta, "is_official_doi", True):
+                raise ValueError("El documento es un registro de metadatos sin enlace de descarga.")
+            else:
+                # ¡CORRECCIÓN AL BUG ORIGINAL! Si es oficial pero no trae link, 
+                # forzamos que su primer intento sea el fallback de doi.org
+                storage_url = f"https://doi.org/{doi}"
 
         try:
-            asset_bytes, final_mime = await _download_asset(meta.storage_uri, meta.mime_type)
+            # 1. El Intento Ciego (usará el link directo de OpenAlex, o el de doi.org si lo forzamos)
+            asset_bytes, final_mime = await _download_asset(storage_url, meta.mime_type)
+        
         except ValueError as primary_err:
             logger.warning(f"Primary storage URI failed: {primary_err}")
+            
+            # 2. CORTAFUEGOS 2: Si el link falló y el ID NO es oficial... ¡Se acabó!
+            if not getattr(meta, "is_official_doi", True):
+                logger.error(f"❌ Abortando: '{doi}' no es oficial. No se buscan fallbacks globales.")
+                raise ValueError("Descarga directa fallida. Identificador propietario sin rescate posible.")
+
+            # 3. Solo llegamos aquí si ES oficial y el primer link falló.
             logger.info(f"Initiating generic DOI resolution fallback for {doi}...")
             fallback_url = f"https://doi.org/{doi}"
             
-            if fallback_url != meta.storage_uri:
+            if fallback_url != storage_url:
                 asset_bytes, final_mime = await _download_asset(fallback_url, meta.mime_type)
             else:
                 raise primary_err
@@ -197,7 +219,7 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
             meta.file_extension = ""
 
         storage = get_storage(settings.storage.selected, base_path=settings.storage.local.base_path)
-        safe_filename = f"{doi.replace('/', '_')}{meta.file_extension}"
+        safe_filename = f"{doi.replace('/', '_').replace(':', '_')}{meta.file_extension}"
         local_uri = await storage.save(safe_filename, asset_bytes)
 
         meta.storage_uri = local_uri

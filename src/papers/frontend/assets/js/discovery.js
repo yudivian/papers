@@ -32,7 +32,7 @@
 // });
 
 // $(document).ready(function() {
-    
+
 //     // ---------------------------------------------------------
 //     // 1. LÓGICA DE PESTAÑAS (TABS)
 //     // ---------------------------------------------------------
@@ -85,7 +85,7 @@
 //         }
 
 //         const $container = $('#discovery-results');
-        
+
 //         // Estado de carga elegante
 //         $container.html(`
 //             <div class="text-center py-10">
@@ -127,7 +127,7 @@
 //                     `);
 //                     // Pintamos las tarjetas (gracias a renderDoiCard, el botón saldrá VERDE)
 //                     response.cache.forEach(doc => renderDoiCard(doc, $container));
-                    
+
 //                     // Borramos la caché del diccionario para no volver a iterarla en el paso 2
 //                     delete response.cache;
 //                 }
@@ -137,7 +137,7 @@
 //                     const docs = response[sourceName];
 //                     if (docs && docs.length > 0) {
 //                         const displayName = sourceName.charAt(0).toUpperCase() + sourceName.slice(1); // ej: "openalex" -> "Openalex"
-                        
+
 //                         // Pintamos el separador
 //                         $container.append(`
 //                             <div class="mb-4 mt-8 pb-2 border-b-2 border-blue-100 flex items-center">
@@ -167,7 +167,7 @@
  */
 
 let pendingData = { doi: null, title: null };
-let taskIntervals = {}; 
+let taskIntervals = {};
 let availableSources = []; // <-- VARIABLE NUEVA PARA GUARDAR LAS FUENTES
 
 function sanitizeAndValidateDoi(input) {
@@ -178,12 +178,12 @@ function sanitizeAndValidateDoi(input) {
 // =====================================================================
 // BLOQUE PRINCIPAL (Al cargar la página)
 // =====================================================================
-$(document).ready(function() {
-    
+$(document).ready(function () {
+
     // ---------------------------------------------------------
     // 1. LO QUE YA TENÍAS (Carga de componentes y DOI)
     // ---------------------------------------------------------
-    $.get('/components/doi_card.html', function(html) {
+    $.get('/components/doi_card.html', function (html) {
         $('body').append(html);
         const modalTpl = document.getElementById('tpl-kb-modal');
         if (modalTpl) {
@@ -198,7 +198,7 @@ $(document).ready(function() {
     // ---------------------------------------------------------
     // 2. LÓGICA DE PESTAÑAS (TABS)
     // ---------------------------------------------------------
-    $('#tab-btn-doi').on('click', function() {
+    $('#tab-btn-doi').on('click', function () {
         $(this).addClass('border-blue-600 text-blue-600').removeClass('border-transparent text-slate-500');
         $('#tab-btn-text').removeClass('border-blue-600 text-blue-600').addClass('border-transparent text-slate-500');
         $('#tab-content-doi').removeClass('hidden').addClass('block');
@@ -206,7 +206,7 @@ $(document).ready(function() {
         $('#discovery-results').empty();
     });
 
-    $('#tab-btn-text').on('click', function() {
+    $('#tab-btn-text').on('click', function () {
         $(this).addClass('border-blue-600 text-blue-600').removeClass('border-transparent text-slate-500');
         $('#tab-btn-doi').removeClass('border-blue-600 text-blue-600').addClass('border-transparent text-slate-500');
         $('#tab-content-text').removeClass('hidden').addClass('block');
@@ -217,15 +217,15 @@ $(document).ready(function() {
     // ---------------------------------------------------------
     // 3. INICIALIZAR FUENTES Y CHECKBOXES
     // ---------------------------------------------------------
-    $.get('/api/v1/sources', function(sources) {
+    $.get('/api/v1/sources', function (sources) {
         const hasCache = sources.some(s => s.id === 'cache');
         if (!hasCache) {
             sources.unshift({ id: 'cache', name: 'Local Cache' });
         }
-        
+
         availableSources = sources;
         const $container = $('#sources-checkboxes-container');
-        
+
         availableSources.forEach(src => {
             const icon = src.id === 'cache' ? '📦' : '🌐';
             $container.append(`
@@ -237,7 +237,7 @@ $(document).ready(function() {
         });
     });
 
-    $('#chk-all-sources').on('change', function() {
+    $('#chk-all-sources').on('change', function () {
         const isChecked = $(this).is(':checked');
         $('.source-checkbox').prop('disabled', isChecked);
         if (isChecked) {
@@ -251,7 +251,7 @@ $(document).ready(function() {
     // ---------------------------------------------------------
     // 4. EL MOTOR PROGRESIVO DE BÚSQUEDA TEXTUAL
     // ---------------------------------------------------------
-    $('#btn-search-text').on('click', function() {
+    $('#btn-search-text').on('click', function () {
         const query = $('#text-search-input').val().trim();
         const limit = $('#search-limit-input').val() || 10;
 
@@ -273,7 +273,7 @@ $(document).ready(function() {
         if ($('#chk-all-sources').is(':checked')) {
             targetSources = availableSources.map(s => s.id);
         } else {
-            $('.source-checkbox:checked').each(function() {
+            $('.source-checkbox:checked').each(function () {
                 targetSources.push($(this).val());
             });
         }
@@ -317,12 +317,12 @@ $(document).ready(function() {
                 url: '/api/v1/discovery/search',
                 type: 'GET',
                 data: { q: query, limit: limit, source: sourceId },
-                success: function(response) {
+                success: function (response) {
                     const $block = $(`#results-block-${sourceId}`);
                     const $content = $block.find('.results-content');
-                    $block.find('.animate-spin').remove(); 
+                    $block.find('.animate-spin').remove();
 
-                    const docs = response[sourceId] || []; 
+                    const docs = response[sourceId] || [];
 
                     if (docs.length === 0) {
                         $block.find('h3').html(`<span>${icon}</span> Found in ${sourceName} (0)`);
@@ -333,7 +333,7 @@ $(document).ready(function() {
                     $block.find('h3').html(`<span>${icon}</span> Found in ${sourceName} (${docs.length})`);
                     docs.forEach(doc => renderDoiCard(doc, $content));
                 },
-                error: function() {
+                error: function () {
                     const $block = $(`#results-block-${sourceId}`);
                     $block.find('.animate-spin').remove();
                     $block.find('h3').html(`<span>${icon}</span> Error fetching from ${sourceName}`);
@@ -343,7 +343,7 @@ $(document).ready(function() {
         });
     });
 
-}); 
+});
 
 function handleDoiSearch() {
     const doi = sanitizeAndValidateDoi($('#doi-input').val());
@@ -421,16 +421,38 @@ function renderDoiCard(meta, $container) {
     } else {
         // Estado: Nuevo paper (OpenAlex, etc.)
         $statusMsg.text('Found via ' + (meta.source || 'external search'));
-        $btnAction
-            .addClass('bg-blue-600 hover:bg-blue-700 text-white')
-            .html('<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Confirm & Download')
-            .on('click', function () {
-                // AQUÍ ESTÁ LA MAGIA: Guardamos la intención de "descargar"
-                pendingData = { doi: meta.doi, title: meta.title, intent: 'download' };
-                $('#modal-paper-title').text(meta.title);
-                $('#modal-kb-select').removeClass('hidden');
-                loadKbList();
-            });
+
+        // MVP: Validar si es realmente descargable
+        // Asumimos is_official_doi como true por defecto si no viene
+        const isOfficial = meta.is_official_doi !== false;
+        const hasStorage = !!meta.storage_uri;
+
+        if (!isOfficial && !hasStorage) {
+            // BLOQUEO: No es oficial y no tiene link de descarga. Solo metadatos.
+            $btnAction
+                .addClass('bg-slate-100 text-slate-500 cursor-not-allowed')
+                .html('<i class="fas fa-info-circle"></i> Metadata Only')
+                .prop('disabled', true);
+        } else {
+            // NORMAL: Es oficial o tiene link directo.
+            $btnAction
+                .addClass('bg-blue-600 hover:bg-blue-700 text-white')
+                .html('<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Confirm & Download')
+                .on('click', function () {
+                    // AQUÍ ESTÁ LA MAGIA: Guardamos todos los datos extra para el backend
+                    pendingData = {
+                        doi: meta.doi,
+                        title: meta.title,
+                        intent: 'download',
+                        source: meta.source,                   // ¡Nuevo!
+                        is_official_doi: meta.is_official_doi, // ¡Nuevo!
+                        storage_uri: meta.storage_uri          // ¡Nuevo!
+                    };
+                    $('#modal-paper-title').text(meta.title);
+                    $('#modal-kb-select').removeClass('hidden');
+                    loadKbList();
+                });
+        }
     }
 
     // Limpiamos y añadimos (igual que antes)
@@ -467,7 +489,7 @@ function setupModalListeners() {
             executeCopy(pendingData.doi, kbId)
 
         } else {
-            executeIngestion(pendingData.doi, pendingData.title, kbId);
+            executeIngestion(pendingData, kbId);
         }
     });
 }
@@ -505,15 +527,23 @@ function executeCopy(doi, kbId) {
     });
 }
 
-function executeIngestion(doi, title, kbId) {
+function executeIngestion(data, kbId) {
     $.ajax({
         url: '/ingestion/start',
         type: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({ doi, title, kb_id: kbId }),
+        data: JSON.stringify({ 
+            doi: data.doi, 
+            title: data.title, 
+            kb_id: kbId,
+            // Enviamos el contexto completo que necesitaba el worker (Bloque 3)
+            source: data.source,
+            is_official_doi: data.is_official_doi,
+            storage_uri: data.storage_uri 
+        }),
         success: (res) => {
             window.showToast('Download started', 'success');
-            trackTask(res.ticket_id, title, 'PENDING');
+            trackTask(res.ticket_id, data.title, 'PENDING');
         }
     });
 }
@@ -588,15 +618,15 @@ function startPolling(ticketId) {
         $.get(`/ingestion/status/${ticketId}`, (data) => {
             // 1. Actualiza la UI
             updateTaskUI(ticketId, data.status, data.error_message);
-            
+
             // 2. Normalizamos el string (igual que hace la función visual)
             const safeStatus = String(data.status || 'PENDING').trim().toUpperCase();
-            
+
             // 3. LA MAGIA: Mantenemos vivo el polling en TODOS los estados activos
             if (!['PENDING', 'DOWNLOADING', 'PROCESSING'].includes(safeStatus)) {
                 clearInterval(taskIntervals[ticketId]);
             }
-            
+
         }).fail(() => {
             // Si el servidor falla temporalmente, no abortamos el polling para siempre
             // solo dejamos que lo intente en el siguiente ciclo, o si prefieres matar:
