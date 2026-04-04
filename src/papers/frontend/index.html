@@ -38,14 +38,14 @@
                 <div class="bg-white border border-slate-200 px-3 py-2 rounded-lg shadow-sm hidden sm:block">
                     <span class="text-sm text-slate-500">Session:</span>
                     <span id="displayUser"
-                        class="ml-1 font-semibold text-slate-800 truncate max-w-[120px] inline-block align-bottom"></span>
+                        class="ml-1 font-semibold truncate max-w-[120px] inline-block align-bottom text-blue-600"></span>
                 </div>
             </div>
         </header>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+       <div class="space-y-6">
 
-            <div class="lg:col-span-2 space-y-6">
+            
                 <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mb-6">
 
                     <div class="flex space-x-6 border-b border-slate-100 mb-6">
@@ -112,30 +112,9 @@
                 </div>
 
                 <div id="discovery-results" class="space-y-4"></div>
-            </div>
 
-            <div class="lg:col-span-1">
-                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden sticky top-6">
-                    <div class="bg-slate-50 border-b border-slate-100 p-4 flex justify-between items-center">
-                        <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center">
-                            <svg class="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor"
-                                viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                            </svg>
-                            Active Downloads
-                        </h3>
-                        <span id="taskLimitsInfo"
-                            class="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded">0
-                            / 10</span>
-                    </div>
-                    <div id="taskList" class="p-2 space-y-2 max-h-[calc(100vh-250px)] overflow-y-auto">
-                        <div class="p-6 text-center text-sm text-slate-400">
-                            No active tasks.
-                        </div>
-                    </div>
-                </div>
-            </div>
+
+            
 
         </div>
     </main>
@@ -155,12 +134,12 @@
 
     <script src="/assets/js/ui.js"></script>
     <script src="/assets/js/discovery.js"></script>
-    <script>
+    <!-- <script>
         $(document).ready(function () {
             $('#displayUser').text(getAuthToken()); //
             UI.loadSidebar();
         });
-    </script>
+    </script> -->
 
 </body>
 

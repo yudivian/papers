@@ -5,7 +5,14 @@
  */
 
 function loadSettingsPanel() {
+    // 1. Elevamos Settings por encima de Downloads temporalmente
+    $('#settingsPanel').css('z-index', 65);
+    $('#downloadsPanel').css('z-index', 60);
+
+    // 2. Exclusión mutua (animación)
+    $('#downloadsPanel').addClass('translate-x-full');
     $('#settingsPanel').removeClass('translate-x-full');
+    
     fetchAdapters();
 }
 
