@@ -199,6 +199,8 @@ class OpenAlexSource(BaseDataSource):
         else:
             status = OpenAlexUserStatus.model_validate(data)
         
+        status.total_system_search_count = self.config.daily_search_limit
+        
         now = datetime.now(timezone.utc)
         if status.last_reset.date() < now.date():
             status.daily_system_search_count = 0
