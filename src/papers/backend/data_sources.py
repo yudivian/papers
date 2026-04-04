@@ -14,6 +14,11 @@ from papers.backend.models import (
     OpenAlexUserStatus
 )
 from papers.backend.config import Settings
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 
 _DATA_SOURCES: Dict[str, Type["BaseDataSource"]] = {}
 
@@ -203,10 +208,68 @@ class OpenAlexSource(BaseDataSource):
             
         return status
 
+    # async def _request_with_health_check(self, url: str, params: dict, is_search: bool = False) -> Optional[dict]:
+    #     """
+    #     Core execution engine that monitors API health and credit consumption.
+    #     """
+    #     status = self._get_status()
+        
+    #     configs_db = self.db.dict("user_adapter_configs")
+    #     user_configs = configs_db.get(self.user_id, {})
+    #     openalex_config = user_configs.get(self.name, {})
+    #     personal_api_key = openalex_config.get("personal_api_key")
+        
+    #     keys_to_try = []
+        
+    #     if personal_api_key and status.personal_key_active:
+    #         keys_to_try.append(("personal", personal_api_key))
+        
+    #     if not is_search:
+    #         for k in self.config.system_keys:
+    #             keys_to_try.append(("system", k))
+    #     else:
+    #         if not personal_api_key or self.config.allow_system_fallback:
+    #             for k in self.config.system_keys:
+    #                 keys_to_try.append(("system", k))
+
+    #     for key_type, key_value in keys_to_try:
+    #         if is_search and key_type == "system":
+    #             if status.daily_system_search_count >= self.config.daily_search_limit:
+    #                 continue
+
+    #         current_params = params.copy()
+    #         current_params["api_key"] = key_value
+
+    #         async with httpx.AsyncClient(timeout=20.0) as client:
+    #             try:
+    #                 response = await client.get(url, params=current_params)
+                    
+    #                 remaining = int(response.headers.get("X-RateLimit-Remaining", 100000))
+    #                 if key_type == "personal" and (remaining <= 0 or response.status_code in (401, 403, 429)):
+    #                     status.personal_key_active = False
+    #                     self.status_db[self.user_id] = status.model_dump(mode="json")
+    #                     continue
+
+    #                 if response.status_code == 200:
+    #                     if is_search and key_type == "system":
+    #                         status.daily_system_search_count += 1
+    #                         self.status_db[self.user_id] = status.model_dump(mode="json")
+    #                     return response.json()
+                    
+    #                 elif response.status_code == 404:
+    #                     return None
+                        
+    #             except Exception as e:
+    #                 self.logger.error(f"OpenAlex request failed for key {key_type}: {e}")
+    #                 continue
+        
+    #     return None
+  
     async def _request_with_health_check(self, url: str, params: dict, is_search: bool = False) -> Optional[dict]:
         """
         Core execution engine that monitors API health and credit consumption.
         """
+        self.logger.info(f"🕵️‍♂️ [OpenAlex HTTP] Iniciando petición a: {url}")
         status = self._get_status()
         
         configs_db = self.db.dict("user_adapter_configs")
@@ -218,6 +281,7 @@ class OpenAlexSource(BaseDataSource):
         
         if personal_api_key and status.personal_key_active:
             keys_to_try.append(("personal", personal_api_key))
+            self.logger.info("🔑 [OpenAlex HTTP] Llave personal detectada y encolada.")
         
         if not is_search:
             for k in self.config.system_keys:
@@ -227,20 +291,36 @@ class OpenAlexSource(BaseDataSource):
                 for k in self.config.system_keys:
                     keys_to_try.append(("system", k))
 
+        self.logger.info(f"🔄 [OpenAlex HTTP] Total de llaves a intentar: {len(keys_to_try)}")
+
         for key_type, key_value in keys_to_try:
             if is_search and key_type == "system":
                 if status.daily_system_search_count >= self.config.daily_search_limit:
+                    self.logger.warning(f"🛑 [OpenAlex HTTP] Límite diario del sistema alcanzado ({status.daily_system_search_count}).")
                     continue
 
             current_params = params.copy()
+            # Inyectamos la llave en los parámetros
             current_params["api_key"] = key_value
 
+            # Ocultamos parte de la llave en el log por seguridad
+            safe_key = f"{key_value[:5]}***" if key_value else "None"
+            self.logger.info(f"🚀 [OpenAlex HTTP] Ejecutando GET. Tipo de llave: '{key_type}', Llave usada: {safe_key}")
+            
             async with httpx.AsyncClient(timeout=20.0) as client:
                 try:
                     response = await client.get(url, params=current_params)
+                    self.logger.info(f"📥 [OpenAlex HTTP] Respuesta recibida. Status Code: {response.status_code}")
                     
+                    # --- AQUÍ ESTÁ LA CLAVE: VER EL TEXTO CRÚDO DE LA RESPUESTA ---
+                    # Imprimimos los primeros 2000 caracteres para no colapsar la terminal si es inmenso
+                    print(f"📦 [OpenAlex HTTP] RAW RESPONSE BODY:\n{response.text[:2000]}")
+                    # --------------------------------------------------------------
+
                     remaining = int(response.headers.get("X-RateLimit-Remaining", 100000))
+                    
                     if key_type == "personal" and (remaining <= 0 or response.status_code in (401, 403, 429)):
+                        self.logger.error(f"⚠️ [OpenAlex HTTP] Llave personal rechazada. Status: {response.status_code}")
                         status.personal_key_active = False
                         self.status_db[self.user_id] = status.model_dump(mode="json")
                         continue
@@ -252,12 +332,16 @@ class OpenAlexSource(BaseDataSource):
                         return response.json()
                     
                     elif response.status_code == 404:
+                        self.logger.warning("⚠️ [OpenAlex HTTP] Error 404: No encontrado.")
                         return None
+                    else:
+                        self.logger.error(f"❌ [OpenAlex HTTP] Error {response.status_code}. Detalle: {response.text}")
                         
                 except Exception as e:
-                    self.logger.error(f"OpenAlex request failed for key {key_type}: {e}")
+                    self.logger.error(f"💥 [OpenAlex HTTP] Excepción de Red o Timeout al contactar OpenAlex: {str(e)}", exc_info=True)
                     continue
         
+        self.logger.error("☠️ [OpenAlex HTTP] Proceso abortado. Retornando None.")
         return None
     
     def _extract_oa_url(self, data: dict) -> str:
@@ -317,7 +401,7 @@ class OpenAlexSource(BaseDataSource):
             institutions=institutions
         )
 
-    async def search_by_text(self, query: str, limit: int = 10) -> List[GlobalDocumentMeta]:
+    # async def search_by_text(self, query: str, limit: int = 10) -> List[GlobalDocumentMeta]:
         """
         Restricted text search operation. Subject to daily user quotas.
         """
@@ -353,6 +437,67 @@ class OpenAlexSource(BaseDataSource):
                 institutions=institutions
             ))
         return results
+    
+    async def search_by_text(self, query: str, limit: int = 10) -> List[GlobalDocumentMeta]:
+        """
+        Restricted text search operation. Subject to daily user quotas.
+        """
+        self.logger.info(f"🔍 [OpenAlex] Iniciando búsqueda de texto: '{query}' (límite: {limit})")
+        params = {"search": query, "per-page": limit}        
+        
+        try:
+            data = await self._request_with_health_check(self.config.base_url, params, is_search=True)
+            
+            if not data:
+                self.logger.warning("⚠️ [OpenAlex] La búsqueda devolvió None (Vacío). Revisa logs superiores.")
+                return []
+
+            items = data.get("results", [])
+            self.logger.info(f"📄 [OpenAlex] La API devolvió {len(items)} resultados crudos. Iniciando mapeo...")
+
+            results = []
+            for item in items:
+                # [MAGIA AQUÍ] Aislamos cada documento. Si uno está corrupto, NO tumba la búsqueda entera.
+                try:
+                    doi_url = item.get("doi")
+                    if not doi_url:
+                        continue
+                    
+                    institutions = list({
+                        inst.get("display_name", "Unknown") 
+                        for a in item.get("authorships", []) or []
+                        for inst in a.get("institutions", []) or []
+                        if inst.get("display_name")
+                    })
+                    
+                    # OpenAlex a veces devuelve concepts como None, lo forzamos a lista vacía
+                    raw_concepts = item.get("concepts") or []
+                    
+                    doc = GlobalDocumentMeta(
+                        doi=doi_url.replace("https://doi.org/", ""),
+                        title=title,
+                        authors=authors,
+                        year=item.get("publication_year"), # Si es None, que Pydantic lo maneje si lo permite, o pon un fallback razonable
+                        file_size=0,
+                        storage_uri=self._extract_oa_url(item),
+                        source=self.name,
+                        abstract=self._reconstruct_abstract(item.get("abstract_inverted_index")),
+                        keywords=keywords,
+                        institutions=institutions
+                    )
+                    results.append(doc)
+                except Exception as parse_error:
+                    self.logger.error(f"⚠️ [OpenAlex] Falló parseo de un documento. Error: {parse_error}. ID Item: {item.get('id')}")
+                    continue
+
+            self.logger.info(f"✅ [OpenAlex] Búsqueda finalizada con éxito. Devolviendo {len(results)} documentos válidos.")
+            return results
+
+        except Exception as e:
+            # Si el error es masivo, lo logueamos antes de que el Orchestrator lo calle
+            self.logger.error(f"🚨 [OpenAlex] Excepción fatal inesperada en search_by_text: {str(e)}", exc_info=True)
+            raise e
+    
     
     @classmethod
     def get_config_state(cls, user_id: str, db: Any) -> Dict[str, Any]:

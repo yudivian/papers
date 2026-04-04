@@ -3,33 +3,347 @@
  * Lógica de búsqueda por DOI y gestión manual de ingesta.
  */
 
+// let pendingData = { doi: null, title: null };
+// let taskIntervals = {}; // Control de polling por ticket
+
+// function sanitizeAndValidateDoi(input) {
+//     let clean = input.trim().replace(/^(https?:\/\/)?(dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '');
+//     return /^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/i.test(clean) ? clean : null;
+// }
+
+// $(document).ready(function () {
+//     // 1. Cargar componentes e inicializar el monitor
+//     $.get('/components/doi_card.html', function (html) {
+//         $('body').append(html);
+
+//         // Extraer y activar el modal
+//         const modalTpl = document.getElementById('tpl-kb-modal');
+//         if (modalTpl) {
+//             document.body.appendChild(modalTpl.content.cloneNode(true));
+//             setupModalListeners();
+//         }
+
+//         // Cargar historial de tareas del usuario
+//         restoreTasks();
+//     });
+
+//     // 2. Listener de búsqueda
+//     $('#btn-search-doi').on('click', handleDoiSearch);
+// });
+
+// $(document).ready(function() {
+    
+//     // ---------------------------------------------------------
+//     // 1. LÓGICA DE PESTAÑAS (TABS)
+//     // ---------------------------------------------------------
+//     $('#tab-btn-doi').on('click', function() {
+//         // Estilos de botones
+//         $(this).addClass('border-blue-600 text-blue-600').removeClass('border-transparent text-slate-500');
+//         $('#tab-btn-text').removeClass('border-blue-600 text-blue-600').addClass('border-transparent text-slate-500');
+//         // Mostrar/Ocultar contenido
+//         $('#tab-content-doi').removeClass('hidden').addClass('block');
+//         $('#tab-content-text').removeClass('block').addClass('hidden');
+//         $('#discovery-results').empty(); // Limpiar resultados al cambiar
+//     });
+
+//     $('#tab-btn-text').on('click', function() {
+//         // Estilos de botones
+//         $(this).addClass('border-blue-600 text-blue-600').removeClass('border-transparent text-slate-500');
+//         $('#tab-btn-doi').removeClass('border-blue-600 text-blue-600').addClass('border-transparent text-slate-500');
+//         // Mostrar/Ocultar contenido
+//         $('#tab-content-text').removeClass('hidden').addClass('block');
+//         $('#tab-content-doi').removeClass('block').addClass('hidden');
+//         $('#discovery-results').empty(); // Limpiar resultados al cambiar
+//     });
+
+//     // ---------------------------------------------------------
+//     // 2. INICIALIZAR EL SELECTOR DE FUENTES (Llamada a API)
+//     // ---------------------------------------------------------
+//     // Asumiendo que tu router está en /api/v1/sources
+//     $.get('/api/v1/sources', function(sources) {
+//         const $select = $('#source-select');
+//         sources.forEach(src => {
+//             // No añadimos la caché de nuevo porque ya la pusimos fija en el HTML
+//             if (src.id !== 'cache') {
+//                 $select.append(`<option value="${src.id}">🌐 ${src.name}</option>`);
+//             }
+//         });
+//     }).fail(function() {
+//         console.warn("Could not load data sources from API.");
+//     });
+
+//     // ---------------------------------------------------------
+//     // 3. EL MOTOR DE BÚSQUEDA TEXTUAL Y RENDERIZADO
+//     // ---------------------------------------------------------
+//     $('#btn-search-text').on('click', function() {
+//         const query = $('#text-search-input').val().trim();
+//         const targetSource = $('#source-select').val(); // Si está vacío "", el backend busca en todos
+
+//         if (!query) {
+//             if (window.showToast) window.showToast('Please enter a search term.', 'warning');
+//             return;
+//         }
+
+//         const $container = $('#discovery-results');
+        
+//         // Estado de carga elegante
+//         $container.html(`
+//             <div class="text-center py-10">
+//                 <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+//                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+//                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+//                 </svg>
+//                 <p class="text-slate-500 font-medium">Scanning knowledge bases & external sources...</p>
+//             </div>
+//         `);
+
+//         // Llamada a tu endpoint de Orquestador
+//         $.ajax({
+//             url: '/api/v1/discovery/search',
+//             type: 'GET',
+//             data: { 
+//                 q: query, 
+//                 limit: 10,
+//                 ...(targetSource ? { source: targetSource } : {}) // Solo envía 'source' si se eligió uno
+//             },
+//             success: function(response) {
+//                 $container.empty();
+
+//                 // Validar si vino totalmente vacío
+//                 if (Object.keys(response).length === 0) {
+//                     $container.html('<div class="text-center py-10 text-slate-500">No documents found across any source.</div>');
+//                     return;
+//                 }
+
+//                 // --- PASO 1: PRIORIDAD ABSOLUTA A LA CACHÉ LOCAL ---
+//                 if (response.cache && response.cache.length > 0) {
+//                     // Pintamos el separador
+//                     $container.append(`
+//                         <div class="mb-4 mt-2 pb-2 border-b-2 border-emerald-100 flex items-center">
+//                             <h3 class="text-sm font-bold text-emerald-700 uppercase tracking-widest flex items-center gap-2">
+//                                 <span>📦</span> Found in Local Cache (${response.cache.length})
+//                             </h3>
+//                         </div>
+//                     `);
+//                     // Pintamos las tarjetas (gracias a renderDoiCard, el botón saldrá VERDE)
+//                     response.cache.forEach(doc => renderDoiCard(doc, $container));
+                    
+//                     // Borramos la caché del diccionario para no volver a iterarla en el paso 2
+//                     delete response.cache;
+//                 }
+
+//                 // --- PASO 2: ITERAR FUENTES EXTERNAS RESTANTES ---
+//                 Object.keys(response).forEach(sourceName => {
+//                     const docs = response[sourceName];
+//                     if (docs && docs.length > 0) {
+//                         const displayName = sourceName.charAt(0).toUpperCase() + sourceName.slice(1); // ej: "openalex" -> "Openalex"
+                        
+//                         // Pintamos el separador
+//                         $container.append(`
+//                             <div class="mb-4 mt-8 pb-2 border-b-2 border-blue-100 flex items-center">
+//                                 <h3 class="text-sm font-bold text-blue-700 uppercase tracking-widest flex items-center gap-2">
+//                                     <span>🌐</span> Found via ${displayName} (${docs.length})
+//                                 </h3>
+//                             </div>
+//                         `);
+//                         // Pintamos las tarjetas (saldrán con el botón AZUL)
+//                         docs.forEach(doc => renderDoiCard(doc, $container));
+//                     }
+//                 });
+//             },
+//             error: function(xhr) {
+//                 console.error("Search Error:", xhr);
+//                 $container.html('<div class="text-center py-10 text-red-500 font-medium">Error performing semantic search. Please try again.</div>');
+//                 if (window.showToast) window.showToast('Search failed.', 'error');
+//             }
+//         });
+//     });
+
+// });
+
+
+/**
+ * Papers Discovery & Task Monitor
+ */
+
 let pendingData = { doi: null, title: null };
-let taskIntervals = {}; // Control de polling por ticket
+let taskIntervals = {}; 
+let availableSources = []; // <-- VARIABLE NUEVA PARA GUARDAR LAS FUENTES
 
 function sanitizeAndValidateDoi(input) {
     let clean = input.trim().replace(/^(https?:\/\/)?(dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '');
     return /^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/i.test(clean) ? clean : null;
 }
 
-$(document).ready(function () {
-    // 1. Cargar componentes e inicializar el monitor
-    $.get('/components/doi_card.html', function (html) {
+// =====================================================================
+// BLOQUE PRINCIPAL (Al cargar la página)
+// =====================================================================
+$(document).ready(function() {
+    
+    // ---------------------------------------------------------
+    // 1. LO QUE YA TENÍAS (Carga de componentes y DOI)
+    // ---------------------------------------------------------
+    $.get('/components/doi_card.html', function(html) {
         $('body').append(html);
-
-        // Extraer y activar el modal
         const modalTpl = document.getElementById('tpl-kb-modal');
         if (modalTpl) {
             document.body.appendChild(modalTpl.content.cloneNode(true));
-            setupModalListeners();
+            setupModalListeners(); // Asegúrate de que esta función exista más abajo
         }
-
-        // Cargar historial de tareas del usuario
         restoreTasks();
     });
 
-    // 2. Listener de búsqueda
     $('#btn-search-doi').on('click', handleDoiSearch);
-});
+
+    // ---------------------------------------------------------
+    // 2. LÓGICA DE PESTAÑAS (TABS)
+    // ---------------------------------------------------------
+    $('#tab-btn-doi').on('click', function() {
+        $(this).addClass('border-blue-600 text-blue-600').removeClass('border-transparent text-slate-500');
+        $('#tab-btn-text').removeClass('border-blue-600 text-blue-600').addClass('border-transparent text-slate-500');
+        $('#tab-content-doi').removeClass('hidden').addClass('block');
+        $('#tab-content-text').removeClass('block').addClass('hidden');
+        $('#discovery-results').empty();
+    });
+
+    $('#tab-btn-text').on('click', function() {
+        $(this).addClass('border-blue-600 text-blue-600').removeClass('border-transparent text-slate-500');
+        $('#tab-btn-doi').removeClass('border-blue-600 text-blue-600').addClass('border-transparent text-slate-500');
+        $('#tab-content-text').removeClass('hidden').addClass('block');
+        $('#tab-content-doi').removeClass('block').addClass('hidden');
+        $('#discovery-results').empty();
+    });
+
+    // ---------------------------------------------------------
+    // 3. INICIALIZAR FUENTES Y CHECKBOXES
+    // ---------------------------------------------------------
+    $.get('/api/v1/sources', function(sources) {
+        const hasCache = sources.some(s => s.id === 'cache');
+        if (!hasCache) {
+            sources.unshift({ id: 'cache', name: 'Local Cache' });
+        }
+        
+        availableSources = sources;
+        const $container = $('#sources-checkboxes-container');
+        
+        availableSources.forEach(src => {
+            const icon = src.id === 'cache' ? '📦' : '🌐';
+            $container.append(`
+                <label class="flex items-center gap-2 text-sm font-medium text-slate-600 cursor-pointer select-none source-label transition-opacity opacity-50">
+                    <input type="checkbox" class="source-checkbox rounded border-slate-300 text-blue-600 focus:ring-blue-500" value="${src.id}" disabled>
+                    ${icon} ${src.name}
+                </label>
+            `);
+        });
+    });
+
+    $('#chk-all-sources').on('change', function() {
+        const isChecked = $(this).is(':checked');
+        $('.source-checkbox').prop('disabled', isChecked);
+        if (isChecked) {
+            $('.source-checkbox').prop('checked', false);
+            $('.source-label').addClass('opacity-50');
+        } else {
+            $('.source-label').removeClass('opacity-50');
+        }
+    });
+
+    // ---------------------------------------------------------
+    // 4. EL MOTOR PROGRESIVO DE BÚSQUEDA TEXTUAL
+    // ---------------------------------------------------------
+    $('#btn-search-text').on('click', function() {
+        const query = $('#text-search-input').val().trim();
+        const limit = $('#search-limit-input').val() || 10;
+
+        if (isNaN(limit) || limit < 1) {
+            limit = 10;
+            $('#search-limit-input').val(10);
+        } else if (limit > 50) {
+            limit = 50;
+            $('#search-limit-input').val(50); // Le bajamos el número visualmente al usuario
+            if (window.showToast) window.showToast('Maximum allowed limit is 50 per source.', 'info');
+        }
+
+        if (!query) {
+            if (window.showToast) window.showToast('Please enter a search term.', 'warning');
+            return;
+        }
+
+        let targetSources = [];
+        if ($('#chk-all-sources').is(':checked')) {
+            targetSources = availableSources.map(s => s.id);
+        } else {
+            $('.source-checkbox:checked').each(function() {
+                targetSources.push($(this).val());
+            });
+        }
+
+        if (targetSources.length === 0) {
+            if (window.showToast) window.showToast('Please select at least one source.', 'warning');
+            return;
+        }
+
+        const $results = $('#discovery-results');
+        $results.empty();
+
+        // Ordenamos para que 'cache' sea siempre el primero
+        targetSources.sort((a, b) => a === 'cache' ? -1 : (b === 'cache' ? 1 : 0));
+
+        targetSources.forEach(sourceId => {
+            const sourceInfo = availableSources.find(s => s.id === sourceId);
+            const sourceName = sourceInfo ? sourceInfo.name : sourceId;
+            const isCache = sourceId === 'cache';
+            const color = isCache ? 'emerald' : 'blue';
+            const icon = isCache ? '📦' : '🌐';
+
+            // Dibujar el esqueleto de carga
+            $results.append(`
+                <div id="results-block-${sourceId}" class="mb-8">
+                    <div class="mb-4 pb-2 border-b-2 border-${color}-100 flex items-center justify-between">
+                        <h3 class="text-sm font-bold text-${color}-700 uppercase tracking-widest flex items-center gap-2">
+                            <span>${icon}</span> Searching in ${sourceName}...
+                        </h3>
+                        <svg class="animate-spin h-5 w-5 text-${color}-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                    <div class="results-content"></div>
+                </div>
+            `);
+
+            // Disparar AJAX independiente
+            $.ajax({
+                url: '/api/v1/discovery/search',
+                type: 'GET',
+                data: { q: query, limit: limit, source: sourceId },
+                success: function(response) {
+                    const $block = $(`#results-block-${sourceId}`);
+                    const $content = $block.find('.results-content');
+                    $block.find('.animate-spin').remove(); 
+
+                    const docs = response[sourceId] || []; 
+
+                    if (docs.length === 0) {
+                        $block.find('h3').html(`<span>${icon}</span> Found in ${sourceName} (0)`);
+                        $content.html(`<p class="text-sm text-slate-500 italic py-2">No documents found.</p>`);
+                        return;
+                    }
+
+                    $block.find('h3').html(`<span>${icon}</span> Found in ${sourceName} (${docs.length})`);
+                    docs.forEach(doc => renderDoiCard(doc, $content));
+                },
+                error: function() {
+                    const $block = $(`#results-block-${sourceId}`);
+                    $block.find('.animate-spin').remove();
+                    $block.find('h3').html(`<span>${icon}</span> Error fetching from ${sourceName}`);
+                    $block.find('.results-content').html(`<p class="text-sm text-red-500 font-medium py-2">Failed to retrieve data from this source.</p>`);
+                }
+            });
+        });
+    });
+
+}); 
 
 function handleDoiSearch() {
     const doi = sanitizeAndValidateDoi($('#doi-input').val());
@@ -200,8 +514,6 @@ function executeIngestion(doi, title, kbId) {
         success: (res) => {
             window.showToast('Download started', 'success');
             trackTask(res.ticket_id, title, 'PENDING');
-            $('#discovery-results').empty();
-            $('#doi-input').val('');
         }
     });
 }

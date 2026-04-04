@@ -6,6 +6,9 @@ from papers.backend.config import Settings
 from papers.backend.models import GlobalDocumentMeta
 from papers.backend.data_sources import get_data_source
 
+import logging 
+logger = logging.getLogger(__name__)
+
 class DiscoveryOrchestrator:
     """
     Manages complex document discovery workflows across multiple data providers.
@@ -110,6 +113,7 @@ class DiscoveryOrchestrator:
         final_map = {}
         for name, res in zip(source_names, results_list):
             if isinstance(res, Exception):
+                logger.error(f"💥 Error fatal en el adaptador '{name}': {str(res)}", exc_info=res)
                 final_map[name] = []
             else:
                 final_map[name] = res
