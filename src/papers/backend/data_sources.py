@@ -79,7 +79,7 @@ class BaseDataSource(ABC):
         return cls.config_schema.model_json_schema()  
     
     @classmethod
-    def get_config_state(cls, user_id: str, db: Any) -> Dict[str, Any]:
+    def get_config_state(cls, user_id: str, db: Any,settings: Optional[Settings] = None) -> Dict[str, Any]:
         """
         Retrieves adapter-specific internal state to be merged with the user's configuration.
         Defaults to an empty dictionary.
@@ -529,12 +529,24 @@ class OpenAlexSource(BaseDataSource):
     
     
     @classmethod
-    def get_config_state(cls, user_id: str, db: Any) -> Dict[str, Any]:
+    def get_config_state(cls, user_id: str, db: Any, settings: Optional[Settings] = None) -> Dict[str, Any]:
         """
         Retrieves internal system trackers specific to OpenAlex.
         """
         status_db = db.dict("openalex_user_status")
-        return status_db.get(user_id, {})
+        state = status_db.get(user_id)
+        
+        # Si el usuario es nuevo y no ha buscado nada, su estado es None.
+        # Lo inicializamos al vuelo para que el frontend no reciba un objeto vacío.
+        if not state:
+            state = OpenAlexUserStatus(user_id=user_id).model_dump(mode="json")
+            
+        # AQUÍ inyectamos el límite de la configuración dinámicamente,
+        # sin ensuciar el router genérico.
+        if settings:
+            state["total_system_search_count"] = settings.data_sources.openalex.daily_search_limit
+            
+        return state
     
     @classmethod
     def apply_config_side_effects(cls, user_id: str, config: OpenAlexConfig, db: Any) -> None:
