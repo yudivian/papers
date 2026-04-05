@@ -5,6 +5,16 @@
 
 let confirmActionCallback = null;
 
+function formatDate(isoString) {
+    if (!isoString) return 'No date';
+    const date = new Date(isoString);
+    return date.toLocaleDateString('es-ES', { 
+        day: 'numeric', 
+        month: 'short', 
+        year: 'numeric' 
+    });
+}
+
 $(document).ready(function () {
     // 1. Initial Load
     // 1. Initial Load
@@ -73,59 +83,8 @@ function loadKBs() {
     grid.html('<p class="text-slate-500 col-span-full text-center py-10">Loading knowledge bases...</p>');
 
     $.get('/kbs').done(function (kbs) {
-        grid.empty();
-
-        if (kbs.length === 0) {
-            grid.html(`
-                <div class="col-span-full bg-white border border-slate-200 border-dashed rounded-xl p-12 text-center">
-                    <p class="text-slate-500 mb-4">You don't have any Knowledge Bases yet.</p>
-                    <button onclick="openModal()" class="text-blue-600 font-medium hover:underline">Create your first project</button>
-                </div>
-            `);
-            return;
-        }
-
-        kbs.forEach(kb => {
-            const docCount = kb.document_ids ? kb.document_ids.length : 0;
-
-            const card = $(`
-                <div class="relative bg-white border border-slate-200 rounded-xl p-6 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer group flex flex-col h-full">
-                    <div class="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                        <button class="btn-edit-card text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors" title="Edit Project">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                        </button>
-                        <button class="btn-delete-card text-slate-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="Delete Project">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        </button>
-                    </div>
-                    
-                    <div class="flex-1 pr-14">
-                        <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1">${kb.name}</h3>
-                        <p class="text-sm text-slate-500 mt-2 line-clamp-2">${kb.description || 'No description provided.'}</p>
-                    </div>
-                    <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
-                        <span class="text-xs font-semibold px-2 py-1 bg-blue-50 text-blue-700 rounded-md">
-                            ${docCount} Documents
-                        </span>
-                        <span class="text-slate-400 text-lg opacity-0 group-hover:opacity-100 transition-opacity">→</span>
-                    </div>
-                </div>
-            `);
-
-            card.on('click', () => loadKBDetail(kb.kb_id || kb.id));
-
-            card.find('.btn-edit-card').on('click', function (e) {
-                e.stopPropagation();
-                openEditModal(kb);
-            });
-
-            card.find('.btn-delete-card').on('click', function (e) {
-                e.stopPropagation();
-                requestDeleteKB(kb);
-            });
-
-            grid.append(card);
-        });
+        currentKBsData = kbs;
+        renderSortedKBs(); // Delega todo a la nueva función
     }).fail(function () {
         grid.html('<div class="col-span-full p-8 text-center bg-red-50 border border-red-100 rounded-xl text-red-600">Error loading projects. Check if the backend is running.</div>');
     });
@@ -204,8 +163,13 @@ function executeDelete(kbId) {
 
 
 function showGrid() {
+    // Ocultar detalle
     $('#workspace-detail').addClass('hidden');
+    
+    // Volver a mostrar TODO lo del workspace
     $('#workspace-grid').removeClass('hidden');
+    $('#kb-sort-bar').removeClass('hidden'); 
+    
     loadKBs();
 }
 
@@ -304,36 +268,43 @@ function executeEdit() {
 }
 
 
-/**
- * Muestra el detalle de una Knowledge Base usando templates.
- */
 function loadKBDetail(kbId) {
+    window.currentKBId = kbId;
+    
+    // Volvemos a hacer la petición real al backend
     $.get(`/kbs/${kbId}`).done(function (fullKb) {
-        showDetail(fullKb);
+        showDetail(fullKb); // Le pasamos los datos completos (con documentos) a showDetail
     }).fail(function () {
-        window.showToast('Error loading project details.', 'error');
+        if (window.showToast) window.showToast('Error loading project details.', 'error');
     });
 }
 
-
 function showDetail(kb) {
+    // 1. Ocultar cuadrícula Y barra de ordenación
     $('#workspace-grid').addClass('hidden');
+    $('#kb-sort-bar').addClass('hidden'); 
+    
+    // 2. Mostrar contenedor de detalle
     $('#workspace-detail').removeClass('hidden');
 
+    // 3. Actualizar textos y fecha
     $('#detailTitle').text(kb.name);
-    $('#detailDesc').text(kb.description || 'No description provided.');
+    $('#detailDesc').text(kb.description || 'Sin descripción.');
+    $('#detailDate').html(`
+        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Creado: ${formatDate(kb.created_at)}
+    `);
 
+    // 4. Configurar botones con .off() para evitar duplicados
     $('#btnEditKB').off('click').on('click', () => openEditModal(kb));
     $('#btnDeleteKB').off('click').on('click', () => requestDeleteKB(kb));
 
+    // 5. Renderizar documentos
     const $container = $('#kb-documents-container').empty();
-
     if (!kb.documents || kb.documents.length === 0) {
-        $container.append('<p class="text-slate-400 text-sm italic p-4">This library is empty.</p>');
+        $container.append('<p class="text-slate-400 text-sm italic p-4">Esta biblioteca está vacía.</p>');
     } else {
-        kb.documents.forEach(doc => {
-            renderKBDocument(doc, kb.kb_id);
-        });
+        kb.documents.forEach(doc => renderKBDocument(doc, kb.kb_id || kb.id));
     }
 }
 
@@ -510,3 +481,123 @@ function formatBytes(bytes, decimals = 1) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
+
+// Variable para almacenar los datos crudos que vienen del backend
+let currentKBsData = []; 
+
+// Función para ordenar y pintar
+// --- LÓGICA DE ORDENAMIENTO (NUEVO) ---
+
+function renderSortedKBs() {
+    const grid = $('#workspace-grid');
+    grid.empty();
+
+    if (!currentKBsData || currentKBsData.length === 0) {
+        grid.html('<div class="col-span-full p-12 text-center text-slate-500 bg-white border border-dashed rounded-xl">No se encontraron proyectos.</div>');
+        return;
+    }
+
+    // 1. Obtener estado del ordenamiento desde el UI
+    const $activeBtn = $('.kb-sort-btn').filter(function() {
+        return $(this).attr('data-dir') !== 'none';
+    }).first();
+    
+    const sortField = $activeBtn.length ? $activeBtn.data('sort') : 'created_at';
+    const sortDir = $activeBtn.length ? $activeBtn.attr('data-dir') : 'desc';
+
+    // 2. Ordenar Array en memoria
+    currentKBsData.sort((a, b) => {
+        let valA, valB;
+        if (sortField === 'name') {
+            valA = (a.name || '').toLowerCase();
+            valB = (b.name || '').toLowerCase();
+        } else if (sortField === 'docs') {
+            valA = a.document_ids ? a.document_ids.length : 0;
+            valB = b.document_ids ? b.document_ids.length : 0;
+        } else if (sortField === 'created_at') {
+            valA = new Date(a.created_at || 0).getTime();
+            valB = new Date(b.created_at || 0).getTime();
+        }
+
+        if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    // 3. Inyectar Tarjetas
+    currentKBsData.forEach(kb => {
+        const docCount = kb.document_ids ? kb.document_ids.length : 0;
+        const displayDate = formatDate(kb.created_at);
+
+        const card = $(`
+            <div class="relative bg-white border border-slate-200 rounded-xl p-6 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer group flex flex-col h-full">
+                <div class="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button class="btn-edit-card text-slate-400 hover:text-blue-600 p-2 rounded-lg" title="Editar">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <button class="btn-delete-card text-slate-400 hover:text-red-500 p-2 rounded-lg" title="Eliminar">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
+                
+                <div class="flex-1 pr-14">
+                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1">${kb.name}</h3>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase mt-4 tracking-wider flex items-center">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Created: ${displayDate}
+                    </p>
+                    <p class="text-sm text-slate-500 mt-2 line-clamp-2">${kb.description || 'Sin descripción.'}</p>
+                    
+                </div>
+                
+                <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
+                    <span class="text-xs font-semibold px-2 py-1 bg-blue-50 text-blue-700 rounded-md">
+                        ${docCount} Documentos
+                    </span>
+                    <span class="text-slate-400 text-lg opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                </div>
+            </div>
+        `);
+
+        // Eventos de la tarjeta (Detail, Edit, Delete)
+        card.on('click', () => loadKBDetail(kb.kb_id || kb.id));
+        card.find('.btn-edit-card').on('click', (e) => { e.stopPropagation(); openEditModal(kb); });
+        card.find('.btn-delete-card').on('click', (e) => { e.stopPropagation(); requestDeleteKB(kb); });
+
+        grid.append(card);
+    });
+}
+
+// 4. Los listeners de clics para los botones de arriba
+$(document).on('click', '.kb-sort-btn', function(e) {
+    e.preventDefault();
+    const $btn = $(this);
+    const field = $btn.data('sort');
+    const currentDir = $btn.attr('data-dir');
+
+    // 1. Determinar nueva dirección
+    let nextDir;
+    if (currentDir === 'none') {
+        // Criterio nuevo: Nombres (asc), Números/Fechas (desc)
+        nextDir = (field === 'name') ? 'asc' : 'desc';
+    } else {
+        // Mismo criterio: Conmutar
+        nextDir = (currentDir === 'asc') ? 'desc' : 'asc';
+    }
+
+    // 2. Limpiar visualmente todos los botones
+    $('.kb-sort-btn').attr('data-dir', 'none')
+        .removeClass('font-bold text-blue-600')
+        .addClass('font-medium text-slate-500');
+    $('.sort-icon').text('↕').addClass('opacity-50');
+
+    // 3. Activar el botón actual
+    $btn.attr('data-dir', nextDir)
+        .removeClass('font-medium text-slate-500')
+        .addClass('font-bold text-blue-600');
+    
+    $btn.find('.sort-icon').text(nextDir === 'asc' ? '↑' : '↓').removeClass('opacity-50');
+
+    // 4. Ejecutar ordenamiento
+    renderSortedKBs();
+});

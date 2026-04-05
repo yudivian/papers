@@ -26,6 +26,8 @@ class UserProfileResponse(BaseModel):
     user_id: str
     active_data_sources: List[str]
     quota: QuotaInfo
+    kb_count: int
+    document_count: int
 
 @router.get("/me", response_model=UserProfileResponse)
 async def get_user_profile(
@@ -33,19 +35,18 @@ async def get_user_profile(
     db: BeaverDB = Depends(get_db),
     settings: Settings = Depends(get_settings)
 ) -> UserProfileResponse:
-    """
-    Retrieves the user profile and computes real-time disk usage.
-    """
     docs_db = db.dict("global_documents")
     kbs_db = db.dict("knowledge_bases")
     
-    # 1. Extraer los DOIs únicos de los proyectos que pertenecen a ESTE usuario
     user_dois = set()
+    kb_counter = 0 # Contador de KBs
+    
     for kb in kbs_db.values():
         if kb.get("owner_id") == user_id:
+            kb_counter += 1 # Incrementar por cada KB propia
             user_dois.update(kb.get("document_ids", []))
             
-    # 2. Sumar el tamaño SOLAMENTE de sus documentos
+    # Calcular peso físico
     used_bytes = 0
     for doi in user_dois:
         doc_data = docs_db.get(doi)
@@ -59,7 +60,10 @@ async def get_user_profile(
     return UserProfileResponse(
         user_id=user_id,
         active_data_sources=settings.data_sources.priority,
-        quota=QuotaInfo(used_bytes=used_bytes, limit_bytes=limit_bytes)
+        quota=QuotaInfo(used_bytes=used_bytes, limit_bytes=limit_bytes),
+        # DEVOLVER LOS NUEVOS DATOS:
+        kb_count=kb_counter,
+        document_count=len(user_dois)
     )
     
 @router.get("/me/sources/{source_id}/config")
@@ -91,3 +95,39 @@ async def get_user_source_config(
     current_config["state"] = adapter_state
 
     return current_config
+
+@router.put("/me/sources/{source_id}/config")
+async def update_user_source_config(
+    source_id: str,
+    config_data: Dict[str, Any] = Body(...),
+    user_id: str = Depends(get_current_user),
+    db: BeaverDB = Depends(get_db)
+):
+    """
+    Updates the user-specific configuration for a given data source adapter.
+    """
+    source_id = source_id.lower().strip()
+    if source_id not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail="Source adapter not found.")
+
+    configs_db = db.dict("user_adapter_configs")
+    user_configs = configs_db.get(user_id, {})
+
+    # Guardamos la configuración (incluyendo el nuevo booleano use_personal_key)
+    user_configs[source_id] = config_data
+    configs_db[user_id] = user_configs
+
+    # Ejecutamos efectos secundarios (como resetear el estado de salud de la llave)
+    adapter_class = _DATA_SOURCES[source_id]
+    
+    # Intentamos validar con el modelo específico si es OpenAlex
+    if source_id == "openalex":
+        from papers.backend.data_sources import OpenAlexConfig
+        try:
+            validated_config = OpenAlexConfig(**config_data)
+            adapter_class.apply_config_side_effects(user_id, validated_config, db)
+        except ValidationError:
+            # Si falla la validación, al menos guardamos los datos crudos
+            pass
+
+    return {"status": "success", "message": "Configuration updated"}

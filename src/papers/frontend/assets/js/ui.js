@@ -289,8 +289,10 @@ window.refreshUsageMetrics = function () {
                 // Actualizar UI
                 $('#usage-storage-text').text(`${usedMB} MB / ${limitGB} GB`);
                 $('#usage-storage-bar').css('width', pct + '%');
+                $('#usage-kb-count').text(res.kb_count || 0);
+                $('#usage-doc-count').text(res.document_count || 0);
 
-                console.log("Storage actualizado:", usedMB, "MB");
+                
             }
         },
         error: function (err) {
@@ -307,7 +309,7 @@ window.refreshUsageMetrics = function () {
         method: 'GET',
         headers: { 'Authorization': 'Bearer ' + token },
         success: function (sources) {
-            
+
             sources.forEach(source => {
                 if (source.id === 'cache') return; // Saltamos la caché
 

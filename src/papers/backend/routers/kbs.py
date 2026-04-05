@@ -7,13 +7,14 @@ scoping all operations to the authenticated user's identifier.
 """
 
 import uuid
+from datetime import datetime 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from beaver import BeaverDB
 
 from papers.backend.deps import get_current_user, get_db
-from papers.backend.models import GlobalDocumentMeta
+from papers.backend.models import GlobalDocumentMeta, KnowledgeBase
 
 router = APIRouter()
 
@@ -33,6 +34,7 @@ class KBResponse(BaseModel):
     name: str
     description: str
     document_ids: List[str]
+    created_at: Optional[datetime] = None 
 
 class KBDetailResponse(BaseModel):
     """
@@ -97,28 +99,25 @@ async def create_knowledge_base(
 ) -> KBResponse:
     """
     Provisions a new, empty Knowledge Base for the authenticated user.
-
-    Args:
-        payload: The structural properties (name, description) for the new workspace.
-        user_id: The authenticated user's identifier, injected via dependencies.
-        db: The active BeaverDB connection instance, injected via dependencies.
-
-    Returns:
-        KBResponse: The newly created workspace entity containing a generated UUID.
     """
     kbs_db = db.dict("knowledge_bases")
     kb_id = f"kb_{uuid.uuid4().hex}"
     
-    new_kb = {
-        "kb_id": kb_id,
-        "owner_id": user_id,
-        "name": payload.name,
-        "description": payload.description or "",
-        "document_ids": []
-    }
+    # 1. Usamos el modelo real de Pydantic para que genere la fecha automáticamente
+    kb_obj = KnowledgeBase(
+        kb_id=kb_id,
+        owner_id=user_id,
+        name=payload.name,
+        description=payload.description or "",
+        document_ids=[]
+    )
     
-    kbs_db[kb_id] = new_kb
-    return KBResponse.model_validate(new_kb)
+    # 2. Lo convertimos a diccionario (json) para guardarlo en BeaverDB
+    new_kb_dict = kb_obj.model_dump(mode="json")
+    
+    # 3. Guardamos y retornamos
+    kbs_db[kb_id] = new_kb_dict
+    return KBResponse.model_validate(new_kb_dict)
 
 @router.get("/{kb_id}", response_model=KBDetailResponse)
 async def get_knowledge_base(

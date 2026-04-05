@@ -11,7 +11,7 @@
     <script>requireAuth();</script>
     <script src="/assets/js/api.js"></script>
     <script src="/assets/js/settings.js"></script>
-    
+
 </head>
 
 <body class="bg-slate-50 min-h-screen overflow-x-hidden font-sans">
@@ -46,6 +46,25 @@
             </div>
         </header>
 
+        <div id="kb-sort-bar" class="flex items-center space-x-6 mb-6 px-2 border-b border-slate-200 pb-3">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Sort by:</span>
+
+            <button class="kb-sort-btn text-sm font-bold text-blue-600 flex items-center transition-colors"
+                data-sort="created_at" data-dir="desc">
+                Date <span class="sort-icon ml-1 text-xs font-bold">↓</span>
+            </button>
+
+            <button class="kb-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors"
+                data-sort="name" data-dir="none">
+                Name <span class="sort-icon ml-1 text-xs font-bold opacity-50">↕</span>
+            </button>
+
+            <button class="kb-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors"
+                data-sort="docs" data-dir="none">
+                Documents <span class="sort-icon ml-1 text-xs font-bold opacity-50">↕</span>
+            </button>
+        </div>
+
         <div id="workspace-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
         </div>
 
@@ -58,6 +77,10 @@
                         ← Back to Workspace
                     </button>
                     <h2 id="detailTitle" class="text-xl md:text-2xl font-bold text-slate-800 break-words"></h2>
+                    <p id="detailDate" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 mb-2 flex items-center">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        Created: --
+                    </p>
                     <p id="detailDesc" class="text-slate-500 mt-1 text-sm"></p>
                 </div>
                 <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto mt-4 sm:mt-0">
@@ -186,13 +209,13 @@
             <div class="w-full md:w-2/3 p-4 md:p-6 overflow-y-auto flex-1" id="dynamicFormContainer"></div>
         </div>
     </div>
-    
+
     <script src="/assets/js/workspace.js"></script>
     <script src="/assets/js/ui.js"></script>
     <script>
-       $(document).ready(function () {
+        $(document).ready(function () {
             $('#displayUser').text(getAuthToken()); //
-            UI.loadSidebar(); 
+            UI.loadSidebar();
         });
     </script>
 </body>
