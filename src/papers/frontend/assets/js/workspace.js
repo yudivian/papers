@@ -4,6 +4,8 @@
  */
 
 let confirmActionCallback = null;
+let currentDocumentsData = []; // Guarda los documentos de la KB abierta
+let currentRenderedKBId = null; // Guarda el ID de la KB actual
 
 function formatDate(isoString) {
     if (!isoString) return 'No date';
@@ -80,13 +82,25 @@ $(document).ready(function () {
 
 function loadKBs() {
     const grid = $('#workspace-grid');
-    grid.html('<p class="text-slate-500 col-span-full text-center py-10">Loading knowledge bases...</p>');
+    const $sortBar = $('#kb-sort-bar');
+    
+    // Solo mostramos el mensaje de "Loading..." si estamos en la pantalla principal
+    if ($('#workspace-detail').hasClass('hidden')) {
+        grid.html('<p class="text-slate-500 col-span-full text-center py-10">Loading knowledge bases...</p>');
+    }
 
     $.get('/kbs').done(function (kbs) {
         currentKBsData = kbs;
-        renderSortedKBs(); // Delega todo a la nueva función
+        
+        // ELIMINADA la lógica rebelde que encendía la barra por error.
+        // Ahora delegamos todo el control visual a renderSortedKBs.
+        renderSortedKBs();
+        
     }).fail(function () {
-        grid.html('<div class="col-span-full p-8 text-center bg-red-50 border border-red-100 rounded-xl text-red-600">Error loading projects. Check if the backend is running.</div>');
+        if ($('#workspace-detail').hasClass('hidden')) {
+            $sortBar.addClass('hidden');
+            grid.html('<div class="col-span-full p-8 text-center bg-red-50 border border-red-100 rounded-xl text-red-600">Error loading projects. Check if the backend is running.</div>');
+        }
     });
 }
 
@@ -105,12 +119,12 @@ function createKB(enterAfterCreation) {
             window.showToast(`Project "${name}" created.`, 'success');
 
             if (enterAfterCreation) {
-                loadKBs();
-                showDetail({
-                    id: response.kb_id || name,
-                    name: name,
-                    description: desc,
-                    documents: []
+                const newId = response.kb_id || response.id || name;
+                $.get(`/kbs/${newId}`).done(function(fullKb) {
+                    showDetail(fullKb); 
+                    loadKBs();         
+                }).fail(function() {
+                    loadKBs(); 
                 });
             } else {
                 loadKBs();
@@ -131,6 +145,11 @@ function requestDeleteKB(kb) {
         return;
     }
 
+    if (currentKBsData && currentKBsData.length <= 1) {
+        window.showToast('You cannot delete your last Knowledge Base. At least one must remain.', 'error');
+        return; 
+    }
+
     openConfirmModal(
         'Delete Knowledge Base',
         `Are you sure you want to delete the project <br><b class="text-slate-800">"${kb.name}"</b>?<br><br>Documents inside will remain safely on your disk.`,
@@ -145,9 +164,9 @@ function executeDelete(kbId) {
         url: `/kbs/${kbId}`,
         type: 'DELETE',
         success: function () {
-            window.showToast('Project deleted successfully.', 'success');
-            showGrid();
-            loadKBs();
+            window.showToast('Project deleted successfully.', 'success');      
+            $('#workspace-detail').addClass('hidden');    
+            showGrid(); 
         },
         error: function (err) {
             window.showToast('Failed to delete project.', 'error');
@@ -156,7 +175,6 @@ function executeDelete(kbId) {
     });
 }
 
-// --- View Logic ---
 
 
 
@@ -248,17 +266,20 @@ function executeEdit() {
             closeEditModal();
             if (window.showToast) window.showToast('Project updated successfully.', 'success');
 
-            // Si estamos en la vista de detalle, actualizamos los textos
+            // Si estamos dentro del detalle, actualizamos los textos pero NO recargamos el grid
             if (!$('#workspace-detail').hasClass('hidden')) {
                 $('#detailTitle').text(updatedKb.name);
                 $('#detailDesc').text(updatedKb.description || 'No description provided.');
-
-                // Actualizamos los botones del detalle con el nuevo objeto
                 $('#btnEditKB').off('click').on('click', () => openEditModal(updatedKb));
                 $('#btnDeleteKB').off('click').on('click', () => requestDeleteKB(updatedKb));
+                
+                // Actualizamos la memoria silenciosamente
+                const index = currentKBsData.findIndex(k => (k.kb_id || k.id) === updatedKb.kb_id);
+                if(index !== -1) currentKBsData[index] = updatedKb;
+            } else {
+                // Solo recargamos el grid si estábamos en la pantalla principal
+                loadKBs(); 
             }
-
-            loadKBs(); // Refresca el grid
         },
         error: function (err) {
             if (window.showToast) window.showToast('Failed to update project. Check backend logs.', 'error');
@@ -280,14 +301,12 @@ function loadKBDetail(kbId) {
 }
 
 function showDetail(kb) {
-    // 1. Ocultar cuadrícula Y barra de ordenación
+    // 1. Navegación (Ocultar Grid, Mostrar Detalle)
     $('#workspace-grid').addClass('hidden');
     $('#kb-sort-bar').addClass('hidden'); 
-    
-    // 2. Mostrar contenedor de detalle
     $('#workspace-detail').removeClass('hidden');
 
-    // 3. Actualizar textos y fecha
+    // 2. Pintar Textos de la KB
     $('#detailTitle').text(kb.name);
     $('#detailDesc').text(kb.description || 'Sin descripción.');
     $('#detailDate').html(`
@@ -295,17 +314,48 @@ function showDetail(kb) {
         Creado: ${formatDate(kb.created_at)}
     `);
 
-    // 4. Configurar botones con .off() para evitar duplicados
+    // 3. Eventos de la KB
     $('#btnEditKB').off('click').on('click', () => openEditModal(kb));
     $('#btnDeleteKB').off('click').on('click', () => requestDeleteKB(kb));
 
-    // 5. Renderizar documentos
+    // 4. Lógica Inteligente de Documentos
+    currentDocumentsData = kb.documents || [];
+    currentRenderedKBId = kb.kb_id || kb.id;
     const $container = $('#kb-documents-container').empty();
-    if (!kb.documents || kb.documents.length === 0) {
-        $container.append('<p class="text-slate-400 text-sm italic p-4">Esta biblioteca está vacía.</p>');
-    } else {
-        kb.documents.forEach(doc => renderKBDocument(doc, kb.kb_id || kb.id));
+    const $headerContainer = $('#doc-header-container');
+
+    // Escenario A: 0 Documentos
+    if (currentDocumentsData.length === 0) {
+        $headerContainer.addClass('hidden'); // Ocultar barra
+        $container.append('<p class="text-slate-400 text-sm italic p-4">No documents</p>');
+        return;
     }
+
+    // Escenario B: 1 Documento
+    if (currentDocumentsData.length === 1) {
+        $headerContainer.addClass('hidden'); // Ocultar barra, no tiene sentido ordenar 1 item
+        renderKBDocument(currentDocumentsData[0], currentRenderedKBId);
+        return;
+    }
+
+    // Escenario C: 2 o más Documentos
+    $headerContainer.removeClass('hidden'); // Mostrar barra
+
+    // Resetear visualmente los botones al estado por defecto (Added: desc)
+    $('.doc-sort-btn')
+        .attr('data-dir', 'none')
+        .removeClass('font-bold text-blue-600')
+        .addClass('font-medium text-slate-500 hover:text-slate-800');
+    $('.doc-sort-btn .sort-icon').text('↕').addClass('opacity-50');
+
+    const $defaultBtn = $('.doc-sort-btn[data-sort="ingested_at"]');
+    $defaultBtn.attr('data-dir', 'desc')
+        .removeClass('font-medium text-slate-500 hover:text-slate-800')
+        .addClass('font-bold text-blue-600');
+    $defaultBtn.find('.sort-icon').text('↓').removeClass('opacity-50');
+
+    // Lanzar el motor de ordenamiento que pinta las tarjetas
+    renderSortedDocuments();
 }
 
 function renderKBDocument(doc, kbId) {
@@ -482,22 +532,42 @@ function formatBytes(bytes, decimals = 1) {
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
-// Variable para almacenar los datos crudos que vienen del backend
 let currentKBsData = []; 
 
-// Función para ordenar y pintar
-// --- LÓGICA DE ORDENAMIENTO (NUEVO) ---
 
 function renderSortedKBs() {
     const grid = $('#workspace-grid');
-    grid.empty();
+    const $sortBar = $('#kb-sort-bar');
+    
+    // Vaciamos el grid, pero NO lo forzamos a ser visible incondicionalmente
+    grid.empty(); 
+
+    // Solo mostramos el grid si NO estamos dentro de la vista de detalle
+    if ($('#workspace-detail').hasClass('hidden')) {
+        grid.removeClass('hidden');
+    }
 
     if (!currentKBsData || currentKBsData.length === 0) {
-        grid.html('<div class="col-span-full p-12 text-center text-slate-500 bg-white border border-dashed rounded-xl">No se encontraron proyectos.</div>');
+        $sortBar.addClass('hidden');
+        grid.html(`
+            <div class="col-span-full bg-white border border-slate-200 border-dashed rounded-xl p-12 text-center">
+                <p class="text-slate-500 mb-4">You don't have any Knowledge Bases yet.</p>
+                <button onclick="openModal()" class="text-blue-600 font-medium hover:underline">Create your first project</button>
+            </div>
+        `);
         return;
     }
 
-    // 1. Obtener estado del ordenamiento desde el UI
+    // LÓGICA DE LA BARRA: Solo se muestra si hay 2 o más KBs Y no estamos en el detalle
+    if (currentKBsData.length <= 1) {
+        $sortBar.addClass('hidden');
+    } else {
+        if ($('#workspace-detail').hasClass('hidden')) {
+            $sortBar.removeClass('hidden');
+        }
+    }
+
+    // --- Lógica de Ordenamiento ---
     const $activeBtn = $('.kb-sort-btn').filter(function() {
         return $(this).attr('data-dir') !== 'none';
     }).first();
@@ -505,7 +575,6 @@ function renderSortedKBs() {
     const sortField = $activeBtn.length ? $activeBtn.data('sort') : 'created_at';
     const sortDir = $activeBtn.length ? $activeBtn.attr('data-dir') : 'desc';
 
-    // 2. Ordenar Array en memoria
     currentKBsData.sort((a, b) => {
         let valA, valB;
         if (sortField === 'name') {
@@ -524,7 +593,7 @@ function renderSortedKBs() {
         return 0;
     });
 
-    // 3. Inyectar Tarjetas
+    // --- Renderizado de Tarjetas ---
     currentKBsData.forEach(kb => {
         const docCount = kb.document_ids ? kb.document_ids.length : 0;
         const displayDate = formatDate(kb.created_at);
@@ -542,12 +611,11 @@ function renderSortedKBs() {
                 
                 <div class="flex-1 pr-14">
                     <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1">${kb.name}</h3>
+                    <p class="text-sm text-slate-500 mt-2 line-clamp-2">${kb.description || 'Sin descripción.'}</p>
                     <p class="text-[10px] font-bold text-slate-400 uppercase mt-4 tracking-wider flex items-center">
                         <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         Created: ${displayDate}
                     </p>
-                    <p class="text-sm text-slate-500 mt-2 line-clamp-2">${kb.description || 'Sin descripción.'}</p>
-                    
                 </div>
                 
                 <div class="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
@@ -559,7 +627,7 @@ function renderSortedKBs() {
             </div>
         `);
 
-        // Eventos de la tarjeta (Detail, Edit, Delete)
+        // Eventos de la tarjeta
         card.on('click', () => loadKBDetail(kb.kb_id || kb.id));
         card.find('.btn-edit-card').on('click', (e) => { e.stopPropagation(); openEditModal(kb); });
         card.find('.btn-delete-card').on('click', (e) => { e.stopPropagation(); requestDeleteKB(kb); });
@@ -600,4 +668,69 @@ $(document).on('click', '.kb-sort-btn', function(e) {
 
     // 4. Ejecutar ordenamiento
     renderSortedKBs();
+});
+
+function renderSortedDocuments() {
+    const $container = $('#kb-documents-container').empty();
+
+    const $activeBtn = $('.doc-sort-btn').filter(function() {
+        return $(this).attr('data-dir') !== 'none';
+    }).first();
+    
+    const sortField = $activeBtn.length ? $activeBtn.data('sort') : 'ingested_at';
+    const sortDir = $activeBtn.length ? $activeBtn.attr('data-dir') : 'desc';
+
+    currentDocumentsData.sort((a, b) => {
+        let valA, valB;
+
+        if (sortField === 'title') {
+            valA = (a.title || '').toLowerCase();
+            valB = (b.title || '').toLowerCase();
+        } else if (sortField === 'file_size') {
+            valA = a.file_size || 0;
+            valB = b.file_size || 0;
+        } else if (sortField === 'year') {
+            valA = a.year || 0;
+            valB = b.year || 0;
+        } else if (sortField === 'ingested_at') {
+            valA = new Date(a.ingested_at || 0).getTime();
+            valB = new Date(b.ingested_at || 0).getTime();
+        }
+
+        if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    currentDocumentsData.forEach(doc => {
+        renderKBDocument(doc, currentRenderedKBId);
+    });
+}
+
+$(document).off('click', '.doc-sort-btn').on('click', '.doc-sort-btn', function(e) {
+    e.preventDefault();
+    const $btn = $(this);
+    const field = $btn.data('sort');
+    const currentDir = $btn.attr('data-dir');
+
+    let nextDir;
+    if (currentDir === 'none' || !currentDir) {
+        nextDir = (field === 'title') ? 'asc' : 'desc';
+    } else {
+        nextDir = (currentDir === 'asc') ? 'desc' : 'asc';
+    }
+
+    $('.doc-sort-btn')
+        .attr('data-dir', 'none')
+        .removeClass('font-bold text-blue-600')
+        .addClass('font-medium text-slate-500 hover:text-slate-800');
+    $('.doc-sort-btn .sort-icon').text('↕').addClass('opacity-50');
+
+    $btn.attr('data-dir', nextDir)
+        .removeClass('font-medium text-slate-500 hover:text-slate-800')
+        .addClass('font-bold text-blue-600');
+    
+    $btn.find('.sort-icon').text(nextDir === 'asc' ? '↑' : '↓').removeClass('opacity-50');
+
+    renderSortedDocuments();
 });
