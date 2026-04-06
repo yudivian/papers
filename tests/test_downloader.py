@@ -11,6 +11,7 @@ import pytest
 import httpx
 from unittest.mock import patch, MagicMock, AsyncMock
 from papers.backend.tasks import _download_asset
+from unittest.mock import ANY
 
 def create_mock_response(status_code: int, content: bytes, headers: dict, text: str = "") -> MagicMock:
     """
@@ -106,8 +107,8 @@ async def test_academic_metadata_heuristic_absolute_url(mock_httpx_client):
     assert mime == "application/pdf"
     assert mock_httpx_client.get.call_count == 2
     mock_httpx_client.get.assert_any_call(target_url, timeout=45.0)
-    mock_httpx_client.get.assert_any_call(real_pdf_url, timeout=45.0)
-
+    mock_httpx_client.get.assert_any_call(real_pdf_url, headers=ANY, timeout=45.0)
+    
 @pytest.mark.anyio
 async def test_academic_metadata_heuristic_relative_url(mock_httpx_client):
     """
@@ -138,7 +139,7 @@ async def test_academic_metadata_heuristic_relative_url(mock_httpx_client):
 
     assert result == b"%PDF-1.4 Valid Relative Document"
     assert mime == "application/pdf"
-    mock_httpx_client.get.assert_any_call(expected_absolute_url, timeout=45.0)
+    mock_httpx_client.get.assert_any_call(expected_absolute_url, headers=ANY, timeout=45.0)
 
 @pytest.mark.anyio
 async def test_network_failure_handling(mock_httpx_client):

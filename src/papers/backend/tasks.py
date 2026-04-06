@@ -154,9 +154,16 @@ async def _download_asset(url: str, expected_mime: str) -> Tuple[bytes, str]:
         raw_mime = response.headers.get("Content-Type", "application/octet-stream")
         resolved_mime = raw_mime.split(";")[0].strip().lower()
 
-        if resolved_mime == "application/pdf" or b"%PDF" in response.content[:2048]:
+        is_pdf_bytes = b"%PDF" in response.content[:2048]
+
+        if is_pdf_bytes:
             logger.info("Direct PDF binary signature verified.")
             return response.content, "application/pdf"
+        elif resolved_mime == "application/pdf":
+            if b"<html" in response.content[:2048].lower():
+                resolved_mime = "text/html"
+            else:
+                raise ValueError("Payload claims to be PDF but lacks magic bytes.")
 
         if "text/html" in resolved_mime:
             html_text = response.text

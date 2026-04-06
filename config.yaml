@@ -22,15 +22,24 @@ data_sources:
     - "cache"
     - "openalex"
   openalex:
+    base_url: "https://api.openalex.org/works"
     system_keys: 
-      - "TU_API_KEY_INSTITUCIONAL_1"
-      - "TU_API_KEY_INSTITUCIONAL_2"
+      - "d1"
+      - "d2"
     daily_search_limit: 10
     allow_system_fallback: true
+  core:
+    base_url: "https://api.core.ac.uk/v3/search/works"
+    system_keys:
+      - "dummy_core_key_1" 
+      - "dummy_core_key_2"
+    daily_search_limit: 20
+    allow_system_fallback: true
+    rate_limit_pause_seconds: 10
 
 # Logical limits
 quotas:
-  user_logical_limit_gb: 5
+  user_logical_limit_gb: 1
   max_concurrent_tasks: 10
 
 # Multilingual Semantic Search
