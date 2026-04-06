@@ -9,8 +9,7 @@
     <script src="/assets/js/jquery-4.0.0.js"></script>
     <script src="/assets/js/auth.js"></script>
     <script>requireAuth();</script>
-    <script src="/assets/js/api.js"></script>
-    <script src="/assets/js/settings.js"></script>
+
 
 </head>
 
@@ -102,11 +101,25 @@
                 </div>
             </div>
             <div class="p-4 md:p-6">
-                <div id="doc-header-container"
-                    class="flex flex-col md:flex-row md:items-center justify-between mb-4 border-b border-slate-100 pb-2 hidden">
-                    <h3 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3 md:mb-0">
-                        Documents inside
-                    </h3>
+                <div id="doc-header-container" class="flex flex-col gap-4 mb-4 border-b border-slate-100 pb-4 hidden">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <h3 class="text-sm font-bold text-slate-700 uppercase tracking-wider">
+                            Documents inside
+                        </h3>
+
+                        <div class="relative w-full sm:w-80">
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            </div>
+                            <input type="search" id="doc-search-input" autocomplete="off"
+                                class="block w-full py-1.5 pl-9 pr-3 text-sm text-slate-700 border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none"
+                                placeholder="Search title, author, abstract...">
+                        </div>
+                    </div>
 
                     <div id="doc-sort-bar"
                         class="flex items-center space-x-4 md:space-x-6 overflow-x-auto pb-1 md:pb-0">
@@ -118,19 +131,16 @@
                             data-sort="ingested_at" data-dir="desc">
                             Added <span class="sort-icon ml-1 text-xs font-bold">↓</span>
                         </button>
-
                         <button
                             class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
                             data-sort="title" data-dir="none">
                             Title <span class="sort-icon ml-1 text-xs font-bold opacity-50">↕</span>
                         </button>
-
                         <button
                             class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
                             data-sort="year" data-dir="none">
                             Year <span class="sort-icon ml-1 text-xs font-bold opacity-50">↕</span>
                         </button>
-
                         <button
                             class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
                             data-sort="file_size" data-dir="none">
@@ -138,7 +148,6 @@
                         </button>
                     </div>
                 </div>
-
                 <div id="kb-documents-container" class="grid grid-cols-1 gap-4"></div>
             </div>
         </div>
@@ -251,8 +260,12 @@
         </div>
     </div>
 
-    <script src="/assets/js/workspace.js"></script>
+    <script src="/assets/js/api.js"></script>
+    <script src="/assets/js/settings.js"></script>
     <script src="/assets/js/ui.js"></script>
+    <script src="/assets/js/utils.js"></script>
+    <script src="/assets/js/workspace.js"></script>
+
     <script>
         $(document).ready(function () {
             $('#displayUser').text(getAuthToken()); //

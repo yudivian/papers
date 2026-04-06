@@ -305,6 +305,7 @@ function showDetail(kb) {
     $('#workspace-grid').addClass('hidden');
     $('#kb-sort-bar').addClass('hidden'); 
     $('#workspace-detail').removeClass('hidden');
+    $('#doc-search-input').val('');
 
     // 2. Pintar Textos de la KB
     $('#detailTitle').text(kb.name);
@@ -670,9 +671,41 @@ $(document).on('click', '.kb-sort-btn', function(e) {
     renderSortedKBs();
 });
 
+// --- MOTOR DE ORDENAMIENTO Y FILTRADO DE DOCUMENTOS ---
 function renderSortedDocuments() {
     const $container = $('#kb-documents-container').empty();
+    
+    // 1. Obtener el texto del buscador
+    const searchTerm = $('#doc-search-input').val() || '';
 
+    // 2. Filtrado Pipeline usando la nueva utilidad
+    let filteredDocs = UIUtils.filterByTerms(currentDocumentsData, searchTerm, function(doc) {
+        return [
+            doc.title || '',
+            (doc.authors || []).join(' '),
+            (doc.keywords || []).join(' '),
+            doc.abstract || '',
+            doc.year || ''
+        ].join(' ');
+    });
+
+    // 3. Control de Estados Vacíos
+    if (currentDocumentsData.length === 0) {
+        $container.append('<p class="text-slate-400 text-sm italic p-4">Esta biblioteca está vacía.</p>');
+        return;
+    }
+
+    if (filteredDocs.length === 0) {
+        $container.append(`
+            <div class="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl mt-4">
+                <p class="text-slate-500">No documents found matching "<b>${searchTerm}</b>".</p>
+                <button onclick="$('#doc-search-input').val('').trigger('input');" class="mt-2 text-sm text-blue-600 hover:underline">Clear search</button>
+            </div>
+        `);
+        return;
+    }
+
+    // 4. Ordenamiento sobre los documentos filtrados
     const $activeBtn = $('.doc-sort-btn').filter(function() {
         return $(this).attr('data-dir') !== 'none';
     }).first();
@@ -680,7 +713,7 @@ function renderSortedDocuments() {
     const sortField = $activeBtn.length ? $activeBtn.data('sort') : 'ingested_at';
     const sortDir = $activeBtn.length ? $activeBtn.attr('data-dir') : 'desc';
 
-    currentDocumentsData.sort((a, b) => {
+    filteredDocs.sort((a, b) => {
         let valA, valB;
 
         if (sortField === 'title') {
@@ -702,7 +735,8 @@ function renderSortedDocuments() {
         return 0;
     });
 
-    currentDocumentsData.forEach(doc => {
+    // 5. Pintar en UI
+    filteredDocs.forEach(doc => {
         renderKBDocument(doc, currentRenderedKBId);
     });
 }
@@ -732,5 +766,10 @@ $(document).off('click', '.doc-sort-btn').on('click', '.doc-sort-btn', function(
     
     $btn.find('.sort-icon').text(nextDir === 'asc' ? '↑' : '↓').removeClass('opacity-50');
 
+    renderSortedDocuments();
+});
+
+// ESCUCHADOR DEL BUSCADOR (Reacciona al teclear)
+$(document).off('input', '#doc-search-input').on('input', '#doc-search-input', function() {
     renderSortedDocuments();
 });
