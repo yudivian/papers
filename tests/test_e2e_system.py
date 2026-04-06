@@ -44,7 +44,7 @@ def test_complete_system_lifecycle(real_client):
     kb_id = kb_res.json()["kb_id"]
 
     logger.info("Step 3: Triggering ingestion via API (Real Background Queue)...")
-    target_doi = "10.1371/journal.pone.0115069"
+    target_doi = "10.1371/journal.pcbi.1003833"
     ingest_payload = {
         "doi": target_doi,
         "kb_id": kb_id,
