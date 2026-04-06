@@ -45,112 +45,82 @@
             </div>
         </header>
 
-        <div id="kb-sort-bar" class="flex items-center space-x-6 mb-6 px-2 border-b border-slate-200 pb-3 hidden">
-            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Sort by:</span>
-
-            <button class="kb-sort-btn text-sm font-bold text-blue-600 flex items-center transition-colors"
-                data-sort="created_at" data-dir="desc">
-                Date <span class="sort-icon ml-1 text-xs font-bold">↓</span>
-            </button>
-
-            <button
-                class="kb-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors"
-                data-sort="name" data-dir="none">
-                Name <span class="sort-icon ml-1 text-xs font-bold opacity-50">↕</span>
-            </button>
-
-            <button
-                class="kb-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors"
-                data-sort="docs" data-dir="none">
-                Documents <span class="sort-icon ml-1 text-xs font-bold opacity-50">↕</span>
-            </button>
+        <div id="kb-toolbar"
+            class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-200 hidden">
+            <div class="relative w-full sm:w-80">
+                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+                <input type="search" id="kb-search-input" autocomplete="off" placeholder="Search Knowledge Bases..."
+                    class="block w-full py-2 pl-10 pr-3 text-sm text-slate-700 border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none">
+            </div>
+            <div class="flex items-center space-x-4 overflow-x-auto">
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Sort by:</span>
+                <button
+                    class="kb-sort-btn text-sm font-bold text-blue-600 flex items-center transition-colors whitespace-nowrap"
+                    data-sort="created_at" data-dir="desc">
+                    Date <span class="sort-icon ml-1 text-xs font-bold">↓</span>
+                </button>
+                <button
+                    class="kb-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
+                    data-sort="name" data-dir="none">
+                    Name <span class="sort-icon ml-1 text-xs font-bold opacity-50">↑</span>
+                </button>
+                <button
+                    class="kb-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
+                    data-sort="docs" data-dir="none">
+                    Documents <span class="sort-icon ml-1 text-xs font-bold opacity-50">↓</span>
+                </button>
+            </div>
         </div>
 
         <div id="workspace-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
         </div>
 
-        <div id="workspace-detail" class="hidden bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            <div
-                class="bg-slate-50 border-b border-slate-100 p-4 md:p-6 flex flex-col sm:flex-row justify-between items-start gap-4">
-                <div>
-                    <button id="btnBackToGrid"
-                        class="text-slate-500 hover:text-slate-800 text-sm font-medium mb-3 flex items-center gap-1">
-                        ← Back to Workspace
-                    </button>
-                    <h2 id="detailTitle" class="text-xl md:text-2xl font-bold text-slate-800 break-words"></h2>
-                    <p id="detailDate"
-                        class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 mb-2 flex items-center">
-                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                        Created: --
-                    </p>
-                    <p id="detailDesc" class="text-slate-500 mt-1 text-sm"></p>
-                </div>
-                <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto mt-4 sm:mt-0">
-                    <button id="btnEditKB"
-                        class="flex-1 sm:flex-none text-blue-600 hover:bg-blue-50 px-4 py-1.5 rounded text-sm font-medium border border-blue-100 transition-colors">
-                        Edit KB
-                    </button>
-                    <button id="btnDeleteKB"
-                        class="flex-1 sm:flex-none text-red-500 hover:bg-red-50 px-4 py-1.5 rounded text-sm font-medium border border-red-100 transition-colors">
-                        Delete KB
-                    </button>
-                </div>
+        <div id="workspace-detail" class="hidden">
+    <div class="mb-8">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+            <div>
+                <h2 id="detailTitle" class="text-2xl md:text-3xl font-bold text-slate-800"></h2>
+                <p id="detailDesc" class="text-slate-500 mt-2 max-w-3xl"></p>
+                <div id="detailDate" class="flex items-center text-[10px] font-bold text-slate-400 uppercase mt-4 tracking-wider"></div>
             </div>
-            <div class="p-4 md:p-6">
-                <div id="doc-header-container" class="flex flex-col gap-4 mb-4 border-b border-slate-100 pb-4 hidden">
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <h3 class="text-sm font-bold text-slate-700 uppercase tracking-wider">
-                            Documents inside
-                        </h3>
-
-                        <div class="relative w-full sm:w-80">
-                            <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
-                                    <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2"
-                                        stroke-linecap="round" stroke-linejoin="round" />
-                                </svg>
-                            </div>
-                            <input type="search" id="doc-search-input" autocomplete="off"
-                                class="block w-full py-1.5 pl-9 pr-3 text-sm text-slate-700 border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none"
-                                placeholder="Search title, author, abstract...">
-                        </div>
-                    </div>
-
-                    <div id="doc-sort-bar"
-                        class="flex items-center space-x-4 md:space-x-6 overflow-x-auto pb-1 md:pb-0">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Sort
-                            by:</span>
-
-                        <button
-                            class="doc-sort-btn text-sm font-bold text-blue-600 flex items-center transition-colors whitespace-nowrap"
-                            data-sort="ingested_at" data-dir="desc">
-                            Added <span class="sort-icon ml-1 text-xs font-bold">↓</span>
-                        </button>
-                        <button
-                            class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
-                            data-sort="title" data-dir="none">
-                            Title <span class="sort-icon ml-1 text-xs font-bold opacity-50">↕</span>
-                        </button>
-                        <button
-                            class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
-                            data-sort="year" data-dir="none">
-                            Year <span class="sort-icon ml-1 text-xs font-bold opacity-50">↕</span>
-                        </button>
-                        <button
-                            class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
-                            data-sort="file_size" data-dir="none">
-                            Size <span class="sort-icon ml-1 text-xs font-bold opacity-50">↕</span>
-                        </button>
-                    </div>
-                </div>
-                <div id="kb-documents-container" class="grid grid-cols-1 gap-4"></div>
+            <div class="flex gap-2">
+                <button id="btnEditKB" class="px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">Edit</button>
+                <button id="btnDeleteKB" class="px-4 py-2 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors">Delete</button>
             </div>
         </div>
+
+        <div id="doc-header-container" class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-slate-200 hidden">
+            <div class="relative w-full sm:w-80">
+                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </div>
+                <input type="search" id="doc-search-input" autocomplete="off" placeholder="Search in this project..." 
+                    class="block w-full py-2 pl-10 pr-3 text-sm text-slate-700 border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none">
+            </div>
+            
+            <div class="flex items-center space-x-4 overflow-x-auto">
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Sort by:</span>
+                <button class="doc-sort-btn text-sm font-bold text-blue-600 flex items-center whitespace-nowrap" data-sort="ingested_at" data-dir="desc">
+                    Date <span class="sort-icon ml-1 text-xs font-bold">↓</span>
+                </button>
+                <button class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center whitespace-nowrap" data-sort="title" data-dir="none">
+                    Title <span class="sort-icon ml-1 text-xs font-bold opacity-50">↑</span>
+                </button>
+                <button class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center whitespace-nowrap" data-sort="file_size" data-dir="none">
+                    Size <span class="sort-icon ml-1 text-xs font-bold opacity-50">↓</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+   <div id="kb-documents-container" class="min-h-[400px] pb-12">
+        </div>
+</div>
     </main>
 
     <div id="modalNewKB"
