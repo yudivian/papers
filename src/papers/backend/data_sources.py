@@ -67,6 +67,24 @@ class OpenAlexConfig(AdapterConfig):
         title="Enable Personal Key",
         description="Turn off to temporarily use the system pool without deleting your saved key.",
     )
+    
+class CoreConfig(AdapterConfig):
+    """
+    Configuration schema defining the required parameters for the CORE data source.
+    """
+
+    personal_api_key: Optional[str] = Field(
+        default=None,
+        title="Personal API Key",
+        description="Optional API key to access higher rate limits and priority pools.",
+        json_schema_extra={"ui_widget": "password"},
+    )
+
+    use_personal_key: bool = Field(
+        default=True,
+        title="Enable Personal Key",
+        description="Turn off to temporarily use the system pool without deleting your saved key.",
+    )
 
 
 class BaseDataSource(ABC):
@@ -668,3 +686,181 @@ class OpenAlexSource(BaseDataSource):
         else:
             new_status = OpenAlexUserStatus(user_id=user_id, personal_key_active=True)
             status_db[user_id] = new_status.model_dump(mode="json")
+            
+
+@register_source
+class CoreSource(BaseDataSource):
+    """
+    Autonomous CORE adapter with built-in quota management and health monitoring.
+    """
+
+    name = "core"
+    config_schema = CoreConfig
+
+    def __init__(self, settings: Settings, db: BeaverDB, user_id: str, **kwargs):
+        self.user_id = user_id
+        self.db = db
+        self.logger = logging.getLogger(__name__)
+        self.config = settings.data_sources.core
+        self.registry_db = self.db.dict("adapter_registry")
+        self.status_db = self.db.dict("core_user_status")
+
+        self._ensure_registration()
+
+    def _ensure_registration(self) -> None:
+        registry_data = self.registry_db.get(self.user_id)
+        if not registry_data:
+            from papers.backend.models import UserAdapterRegistry
+            registry = UserAdapterRegistry(
+                user_id=self.user_id, active_adapters=[self.name]
+            )
+        else:
+            from papers.backend.models import UserAdapterRegistry
+            registry = UserAdapterRegistry.model_validate(registry_data)
+            if self.name not in registry.active_adapters:
+                registry.active_adapters.append(self.name)
+
+        registry.last_interaction[self.name] = datetime.now(timezone.utc)
+        self.registry_db[self.user_id] = registry.model_dump(mode="json")
+
+    def _get_status(self) -> Any:
+        from papers.backend.models import CoreUserStatus
+        data = self.status_db.get(self.user_id)
+        if not data:
+            status = CoreUserStatus(user_id=self.user_id)
+        else:
+            status = CoreUserStatus.model_validate(data)
+
+        status.total_system_search_count = self.config.daily_search_limit
+
+        now = datetime.now(timezone.utc)
+        if status.last_reset.date() < now.date():
+            status.daily_system_search_count = 0
+            status.personal_key_active = True
+            status.last_reset = now
+            self.status_db[self.user_id] = status.model_dump(mode="json")
+
+        return status
+
+    async def _request_with_health_check(
+        self, payload: dict, is_search: bool = False
+    ) -> Optional[dict]:
+        self.logger.info(f"🕵️‍♂️ [CORE HTTP] Iniciando petición a: {self.config.base_url}")
+        status = self._get_status()
+        
+        configs_db = self.db.dict("user_adapter_configs")
+        user_configs = configs_db.get(self.user_id, {})
+        core_user_config = user_configs.get(self.name, {})
+        
+        personal_api_key = core_user_config.get("personal_api_key")
+        use_personal_key = core_user_config.get("use_personal_key", True)
+
+        keys_to_try = []
+        if use_personal_key and personal_api_key and status.personal_key_active:
+            keys_to_try.append(("personal", personal_api_key))
+            self.logger.info("🔑 [CORE HTTP] Llave personal detectada y encolada.")
+
+        if not is_search or self.config.allow_system_fallback:
+            for k in self.config.system_keys:
+                keys_to_try.append(("system", k))
+
+        self.logger.info(f"🔄 [CORE HTTP] Total de llaves a intentar: {len(keys_to_try)}")
+
+        for key_type, key_value in keys_to_try:
+            if is_search and key_type == "system":
+                if status.daily_system_search_count >= self.config.daily_search_limit:
+                    self.logger.warning(f"🛑 [CORE HTTP] Límite diario alcanzado.")
+                    continue
+
+            headers = {"Authorization": f"Bearer {key_value}"}
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                try:
+                    response = await client.post(self.config.base_url, json=payload, headers=headers)
+                    self.logger.info(f"📥 [CORE HTTP] Respuesta: {response.status_code}")
+                    
+                    if key_type == "personal" and response.status_code in (401, 403, 429):
+                        self.logger.error(f"⚠️ [CORE HTTP] Llave personal rechazada.")
+                        status.personal_key_active = False
+                        self.status_db[self.user_id] = status.model_dump(mode="json")
+                        continue
+
+                    if response.status_code == 200:
+                        if is_search and key_type == "system":
+                            status.daily_system_search_count += 1
+                            self.status_db[self.user_id] = status.model_dump(mode="json")
+                        return response.json()
+                except Exception as e:
+                    self.logger.error(f"💥 [CORE HTTP] Excepción: {str(e)}")
+                    continue
+        return None
+
+    async def fetch_by_doi(self, doi: str) -> Optional[GlobalDocumentMeta]:
+        payload = {"q": f'doi:"{doi}"', "limit": 1}
+        data = await self._request_with_health_check(payload)
+        if not data or not data.get("results"):
+            return None
+        return self._map_to_meta(data["results"][0])
+
+    async def search_by_text(self, query: str, limit: int = 10) -> List[GlobalDocumentMeta]:
+        self.logger.info(f"🔍 [CORE] Búsqueda: '{query}' (límite: {limit})")
+        payload = {"q": query, "limit": limit}
+        data = await self._request_with_health_check(payload, is_search=True)
+        if not data:
+            return []
+        
+        results = []
+        for item in data.get("results", []):
+            try:
+                meta = self._map_to_meta(item)
+                results.append(meta)
+            except Exception as e:
+                self.logger.error(f"⚠️ [CORE] Falló parseo: {e}")
+        return results
+
+    def _map_to_meta(self, item: dict) -> GlobalDocumentMeta:
+        doi = item.get("doi")
+        
+        # Lógica de Identidad del MVP (Mirroring OpenAlexSource)
+        if doi:
+            final_doi = doi
+            is_official = True
+        else:
+            final_doi = f"core:{item.get('id')}"
+            is_official = False
+
+        return GlobalDocumentMeta(
+            doi=final_doi,
+            is_official_doi=is_official,
+            title=item.get("title") or "Unknown",
+            authors=[a.get("name") for a in item.get("authors", []) if a.get("name")],
+            year=item.get("yearPublished") or 0,
+            file_size=0,  # <-- CAMBIO CRÍTICO: Evita ValidationError
+            storage_uri=item.get("downloadUrl"),
+            source=self.name,
+            abstract=item.get("abstract"),
+            keywords=[],   # Requerido por el modelo
+            institutions=[] # Requerido por el modelo
+        )
+
+    @classmethod
+    def get_config_state(cls, user_id: str, db: Any, settings: Optional[Settings] = None) -> Dict[str, Any]:
+        from papers.backend.models import CoreUserStatus
+        status_db = db.dict("core_user_status")
+        state = status_db.get(user_id)
+        if not state:
+            state = CoreUserStatus(user_id=user_id).model_dump(mode="json")
+        if settings:
+            state["total_system_search_count"] = settings.data_sources.core.daily_search_limit
+        return state
+
+    @classmethod
+    def apply_config_side_effects(cls, user_id: str, config: CoreConfig, db: Any) -> None:
+        from papers.backend.models import CoreUserStatus
+        status_db = db.dict("core_user_status")
+        status_data = status_db.get(user_id)
+        if status_data:
+            status = CoreUserStatus.model_validate(status_data)
+            status.personal_key_active = True
+            status_db[user_id] = status.model_dump(mode="json")
+        else:
+            status_db[user_id] = CoreUserStatus(user_id=user_id, personal_key_active=True).model_dump(mode="json")

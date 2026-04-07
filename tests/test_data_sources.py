@@ -64,7 +64,6 @@ async def test_system_quota_enforcement(db_context, user_id, sys_settings):
     Tests that the system blocks searches after reaching the daily_search_limit.
     In config.yaml, the limit is set to 2.
     """
-    # [LA SOLUCIÓN] Forzamos el límite a 2 dinámicamente solo para este test
     sys_settings.data_sources.openalex.daily_search_limit = 2
         
     source = get_data_source("openalex", settings=sys_settings, user_id=user_id, db=db_context)
