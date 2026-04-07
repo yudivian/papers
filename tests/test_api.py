@@ -281,3 +281,29 @@ def test_update_user_source_config_with_side_effects(api_env):
     
     updated_status = status_db.get("authorized_test_user")
     assert updated_status["personal_key_active"] is True
+    
+@pytest.mark.anyio
+async def test_update_core_config_side_effects(api_env):
+    """
+    Simulates a user saving their CORE key in the UI and verifies that
+    side effects (key activation) are properly applied in BeaverDB.
+    """
+    payload = {
+        "personal_api_key": "core_test_key_123",
+        "use_personal_key": True
+    }
+
+    # 1. Call the endpoint used by the UI (client is global and synchronous here)
+    response = client.put("/api/v1/users/me/sources/core/config", json=payload)
+    assert response.status_code == 200
+
+    db = api_env["db"]
+    user_id = "authorized_test_user"  # Overridden by get_current_user in api_env
+
+    # 2. Verify the configuration was saved in user_adapter_configs
+    configs_db = db.dict("user_adapter_configs")
+    assert configs_db[user_id]["core"]["personal_api_key"] == "core_test_key_123"
+
+    # 3. Verify SIDE EFFECTS (key activated)
+    status_db = db.dict("core_user_status")
+    assert status_db[user_id]["personal_key_active"] is True

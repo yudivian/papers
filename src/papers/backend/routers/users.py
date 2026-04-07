@@ -8,7 +8,7 @@ from papers.backend.deps import get_current_user, get_db, get_settings
 from papers.backend.config import Settings
 
 from papers.backend.data_sources import _DATA_SOURCES
-from papers.backend.models import OpenAlexUserStatus
+from papers.backend.data_sources import OpenAlexConfig, CoreConfig
 
 router = APIRouter()
 
@@ -121,13 +121,13 @@ async def update_user_source_config(
     adapter_class = _DATA_SOURCES[source_id]
     
     # Intentamos validar con el modelo específico si es OpenAlex
-    if source_id == "openalex":
-        from papers.backend.data_sources import OpenAlexConfig
+    config_schema = getattr(adapter_class, "config_schema", None)
+    
+    if config_schema:
         try:
-            validated_config = OpenAlexConfig(**config_data)
+            validated_config = config_schema(**config_data)
             adapter_class.apply_config_side_effects(user_id, validated_config, db)
-        except ValidationError:
-            # Si falla la validación, al menos guardamos los datos crudos
-            pass
+        except ValidationError as e:
+             raise HTTPException(status_code=400, detail=str(e))
 
     return {"status": "success", "message": "Configuration updated"}

@@ -90,3 +90,30 @@ async def test_orchestrator_waterfall_resolution(mock_get_source, mock_context):
     assert result.title == "Found"
     assert cache_source.fetch_by_doi.called
     assert not oa_source.fetch_by_doi.called
+    
+
+
+
+@pytest.mark.anyio
+async def test_orchestrator_executes_core_source(mock_context):
+    """
+    Verifies that the orchestrator calls search_by_text on CoreSource
+    if 'core' is in the priority list.
+    """
+    settings = mock_context["settings"]
+    db = mock_context["db"]
+    user_id = mock_context["user_id"]
+
+    # Force the priority locally for the test
+    settings.data_sources.priority = ["core"]
+    
+    orchestrator = DiscoveryOrchestrator(settings=settings, db=db, user_id=user_id)
+    
+    # Mock the adapter's specific method to avoid real HTTP requests
+    with patch("papers.backend.data_sources.CoreSource.search_by_text") as mock_core_search:
+        mock_core_search.return_value = []
+
+        await orchestrator.search("test query", limit=5)
+
+        # The orchestrator should have called the CORE adapter
+        mock_core_search.assert_called_once()

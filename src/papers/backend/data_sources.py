@@ -11,7 +11,6 @@ from papers.backend.models import (
     GlobalDocumentMeta,
     OpenAlexUserStatus,
     UserAdapterRegistry,
-    OpenAlexUserStatus,
 )
 from papers.backend.config import Settings
 import logging
