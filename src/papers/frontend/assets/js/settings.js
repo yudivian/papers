@@ -80,120 +80,101 @@ function fetchAdapters() {
     });
 }
 
-function renderAdapterForm(sourceId, preloadedSchema) {
+function renderAdapterForm(sourceId, schema) {
+    const container = $(`#adapter-config-${sourceId}`);
     const formContainer = $('#dynamicFormContainer');
-    formContainer.html('<p class="text-slate-500 text-sm">Loading user data...</p>');
 
-    // We already have the schema, just fetch the user's saved values
-    $.get(`/users/me/sources/${sourceId}/config`).done(function (config) {
+    $.get(`/api/v1/users/me/sources/${sourceId}/config`, {
+        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') }
+    }).done(function (config) {
         formContainer.empty();
+        
+        const $header = $('<div class="flex flex-wrap gap-4 mb-6 pb-4 border-b border-slate-100"></div>');
+        const $form = $('<form id="adapterConfigForm" class="space-y-6"></form>');
+        
+        Object.keys(schema.properties).forEach(key => {
+            const prop = schema.properties[key];
+            const value = config[key] !== undefined ? config[key] : (prop.default !== undefined ? prop.default : '');
 
-        // Header info based on adapter status
-        if (config.hasOwnProperty('personal_key_active')) {
-            const statusColor = config.personal_key_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-            const statusText = config.personal_key_active ? 'Active' : 'Exhausted/Invalid';
-            const searches = config.daily_system_search_count !== undefined ? config.daily_system_search_count : 0;
+            if (prop.readOnly === true) {
+                let badgeClass = 'bg-slate-100 text-slate-600';
+                let text = value;
 
-            const statusBadge = `
-                <div class="mb-6 p-4 rounded-lg bg-slate-50 border border-slate-100">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-medium text-slate-500 uppercase">Key Status</span>
-                        <span class="text-xs font-semibold px-2 py-1 rounded ${statusColor}">${statusText}</span>
+                if (prop.type === 'boolean') {
+                    if (key === 'is_key_invalid') {
+                        badgeClass = value ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800';
+                        text = value ? '⚠️ Invalid' : 'Healthy';
+                    } else {
+                        badgeClass = value ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-500';
+                        text = value ? 'Active' : 'Inactive';
+                    }
+                }
+                $header.append(`
+                    <div class="flex flex-col">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-tight">${prop.title || key}</span>
+                        <span class="px-3 py-1 rounded-full text-xs font-bold uppercase ${badgeClass}">${text}</span>
                     </div>
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs font-medium text-slate-500 uppercase">System Searches Today</span>
-                        <span class="text-sm font-semibold text-slate-700">${searches}</span>
-                    </div>
-                </div>
-            `;
-            formContainer.append(statusBadge);
-        }
+                `);
+                return; 
+            }
 
-        const form = $('<form>').addClass('space-y-4').on('submit', function (e) {
-            e.preventDefault();
-            saveAdapterConfig(sourceId, form, preloadedSchema);
-        });
-
-        Object.keys(preloadedSchema.properties).forEach(key => {
-            const prop = preloadedSchema.properties[key];
-            const fieldDiv = $('<div>').addClass('mb-4');
-
-            // LÓGICA NUEVA: Renderizar booleanos como toggles/checkboxes
+            const $fieldDiv = $('<div>').addClass('flex flex-col gap-2');
+            const labelHtml = `<label class="text-xs font-bold text-slate-500 uppercase">${prop.title || key}</label>`;
+            
             if (prop.type === 'boolean') {
-                const isChecked = config[key] !== undefined ? config[key] : (prop.default || false);
-
-                fieldDiv.addClass('flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg');
-
-                const textDiv = $('<div>');
-                textDiv.append($('<label>').text(prop.title || key).addClass('block text-sm font-medium text-slate-800'));
-                if (prop.description) {
-                    textDiv.append($('<p>').text(prop.description).addClass('text-xs text-slate-500 mt-0.5'));
-                }
-
-                const input = $('<input>')
-                    .attr('type', 'checkbox')
-                    .attr('name', key)
-                    .prop('checked', isChecked)
-                    .addClass('w-4 h-4 text-blue-600 border-slate-300 rounded cursor-pointer focus:ring-blue-500');
-
-                fieldDiv.append(textDiv, input);
+                const checked = value ? 'checked' : '';
+                const controls = prop.json_schema_extra?.ui_controls ? JSON.stringify(prop.json_schema_extra.ui_controls) : '';
+                
+                $fieldDiv.html(`
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm font-medium text-slate-700">${prop.description || prop.title}</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" name="${key}" class="sr-only peer adapter-input ui-toggle" data-controls='${controls}' ${checked}>
+                            <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                        </label>
+                    </div>
+                `);
+            } else {
+                const isPassword = prop.json_schema_extra?.ui_widget === 'password' || key.includes('key');
+                $fieldDiv.append(`
+                    ${labelHtml}
+                    <input type="${isPassword ? 'password' : 'text'}" name="${key}" value="${value}" 
+                           class="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:ring-1 focus:ring-indigo-500 outline-none adapter-input transition-all">
+                    ${prop.description ? `<p class="text-xs text-slate-400 mt-1">${prop.description}</p>` : ''}
+                `);
             }
-            // LÓGICA EXISTENTE: Textos y Passwords
-            else {
-                const inputType = (prop.json_schema_extra && prop.json_schema_extra.ui_widget === 'password') ? 'password' : 'text';
-                const currentValue = config[key] || '';
-
-                fieldDiv.append($('<label>').text(prop.title || key).addClass('block text-sm font-medium text-slate-700 mb-1'));
-
-                const input = $('<input>')
-                    .attr('type', inputType)
-                    .attr('name', key)
-                    .val(currentValue)
-                    .addClass('w-full px-3 py-2 border border-slate-300 rounded-md text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-colors');
-
-                fieldDiv.append(input);
-
-                if (prop.description) {
-                    fieldDiv.append($('<p>').text(prop.description).addClass('text-xs text-slate-500 mt-1'));
-                }
-            }
-
-            form.append(fieldDiv);
+            $form.append($fieldDiv);
         });
 
-        const submitBtn = $('<button>')
-            .attr('type', 'submit')
-            .text('Save Configuration')
-            .addClass('mt-4 w-full bg-slate-800 text-white text-sm font-medium py-2 rounded-md hover:bg-slate-900 transition-colors');
+        if ($header.children().length > 0) formContainer.append($header);
+        formContainer.append($form);
 
-        form.append(submitBtn);
-        formContainer.append(form);
-
-        // --- LÓGICA DE INTERACCIÓN: Bloquear input al desactivar toggle ---
-        // Dentro de renderAdapterForm, después de añadir el botón de Save:
-        const $useKeyToggle = form.find('input[name="use_personal_key"]');
-        const $apiKeyInput = form.find('input[name="personal_api_key"]');
-
-        if ($useKeyToggle.length && $apiKeyInput.length) {
-            const updateState = () => {
-                if ($useKeyToggle.is(':checked')) {
-                    $apiKeyInput.prop('disabled', false).removeClass('bg-slate-100 cursor-not-allowed');
-                } else {
-                    $apiKeyInput.prop('disabled', true).addClass('bg-slate-100 cursor-not-allowed');
-                }
+        $form.find('.ui-toggle').each(function() {
+            const $toggle = $(this);
+            const controlsData = $toggle.attr('data-controls');
+            if (!controlsData) return;
+            
+            let targets = [];
+            try { targets = JSON.parse(controlsData); } catch(e) {}
+            
+            const update = () => {
+                const isEnabled = $toggle.is(':checked');
+                targets.forEach(targetName => {
+                    const $target = $form.find(`[name="${targetName}"]`);
+                    $target.prop('disabled', !isEnabled);
+                    $target.toggleClass('bg-slate-50 opacity-60 cursor-not-allowed', !isEnabled);
+                });
             };
-            $useKeyToggle.on('change', updateState);
-            updateState(); // Ejecutar al cargar
-        }
-    }).fail(function () {
-        formContainer.html('<p class="text-red-500 text-sm">Failed to load user configuration.</p>');
+            $toggle.on('change', update);
+            update(); 
+        });
     });
 }
+
 
 function saveAdapterConfig(sourceId, formElement, schema) {
     const formData = {};
 
-    // Iteramos manualmente para capturar inputs deshabilitados y booleanos
     formElement.find('input').each(function () {
         if (this.type === 'checkbox') {
             formData[this.name] = this.checked;

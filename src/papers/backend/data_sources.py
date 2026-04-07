@@ -93,6 +93,7 @@ class CoreConfig(AdapterConfig):
         description="Turn off to temporarily use the system pool without deleting your saved key.",
     )
     
+    
 
 
 class BaseDataSource(ABC):
@@ -214,6 +215,25 @@ class OpenAlexSource(BaseDataSource):
 
     name = "openalex"
     config_schema = OpenAlexConfig
+    
+    @classmethod
+    def get_ui_schema(cls) -> Dict[str, Any]:
+        schema = super().get_ui_schema()
+        if "properties" not in schema:
+            schema["properties"] = {}
+            
+        schema["properties"].update({
+            "personal_key_active": {"title": "System Status", "type": "boolean", "readOnly": True},
+            "daily_system_search_count": {"title": "Daily Searches", "type": "integer", "readOnly": True},
+            "total_system_search_count": {"title": "System Limit", "type": "integer", "readOnly": True}
+        })
+        
+        if "use_personal_key" in schema["properties"]:
+            schema["properties"]["use_personal_key"]["json_schema_extra"] = {
+                "ui_controls": ["personal_api_key"]
+            }
+            
+        return schema
 
     def __init__(self, settings: Settings, db: BeaverDB, user_id: str, **kwargs):
         """
@@ -704,6 +724,27 @@ class CoreSource(BaseDataSource):
 
     name = "core"
     config_schema = CoreConfig
+    
+    
+    @classmethod
+    def get_ui_schema(cls) -> Dict[str, Any]:
+        schema = super().get_ui_schema()
+        if "properties" not in schema:
+            schema["properties"] = {}
+
+        schema["properties"].update({
+            "personal_key_active": {"title": "Adapter Mode", "type": "boolean", "readOnly": True},
+            "is_key_invalid": {"title": "Key Health", "type": "boolean", "readOnly": True},
+            "daily_system_search_count": {"title": "System Searches", "type": "integer", "readOnly": True},
+            "total_system_search_count": {"title": "System Limit", "type": "integer", "readOnly": True}
+        })
+
+        if "use_personal_key" in schema["properties"]:
+            schema["properties"]["use_personal_key"]["json_schema_extra"] = {
+                "ui_controls": ["personal_api_key"]
+            }
+
+        return schema
 
     def __init__(self, settings: Settings, db: BeaverDB, user_id: str, **kwargs):
         self.user_id = user_id
@@ -967,7 +1008,18 @@ class CoreSource(BaseDataSource):
             return []
 
         url = "https://api.core.ac.uk/v3/search/works/"
-        params = {"q": query, "limit": limit}
+        
+        # --- CORRECCIÓN DE LA QUERY PARA LUCENE (CORE API) ---
+        # Limpiamos el texto y lo forzamos a buscar la frase exacta en título, 
+        # abstract, o en general, usando comillas para que no lo fragmente.
+        clean_q = query.strip()
+        lucene_q = f'title:("{clean_q}") OR abstract:("{clean_q}") OR "{clean_q}"'
+        
+        params = {
+            "q": lucene_q, 
+            "limit": limit
+        }
+        # -----------------------------------------------------
         
         try:
             # 2. Ejecución segura de red
@@ -996,28 +1048,34 @@ class CoreSource(BaseDataSource):
             raise e
 
     def _map_to_meta(self, item: dict) -> GlobalDocumentMeta:
-        doi = item.get("doi")
-        
-        # Lógica de Identidad del MVP (Mirroring OpenAlexSource)
-        if doi:
-            final_doi = doi
-            is_official = True
-        else:
-            final_doi = f"core:{item.get('id')}"
-            is_official = False
+        year = None
+        pub_date = item.get("publishedDate")
+        if pub_date:
+            try:
+                # pub_date suele venir como "2023-10-01T00:00:00Z"
+                year = int(pub_date[:4])
+            except (ValueError, TypeError):
+                year = None
 
+        # Autores seguros (CORE los manda en una lista de dicts o a veces null)
+        authors = []
+        raw_authors = item.get("authors") or []
+        for author in raw_authors:
+            if isinstance(author, dict) and author.get("name"):
+                authors.append(author["name"])
+            elif isinstance(author, str):
+                authors.append(author)
+
+        # Retornar el modelo asegurando que abstract y título nunca rompan si son null
         return GlobalDocumentMeta(
-            doi=final_doi,
-            is_official_doi=is_official,
-            title=item.get("title") or "Unknown",
-            authors=[a.get("name") for a in item.get("authors", []) if a.get("name")],
-            year=item.get("yearPublished") or 0,
-            file_size=0,  # <-- CAMBIO CRÍTICO: Evita ValidationError
-            storage_uri=item.get("downloadUrl"),
-            source=self.name,
-            abstract=item.get("abstract"),
-            keywords=[],   # Requerido por el modelo
-            institutions=[] # Requerido por el modelo
+            source="core",
+            external_id=str(item.get("id")),
+            title=item.get("title") or "Sin título",
+            abstract=item.get("abstract") or "Sin resumen disponible.", # Previene fallos si es null
+            authors=authors,
+            year=year,
+            url=item.get("downloadUrl") or item.get("sourceUrl"),
+            doi=item.get("doi")
         )
 
     @classmethod
