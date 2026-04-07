@@ -62,7 +62,8 @@ def test_core_user_status_defaults():
     status = CoreUserStatus(user_id="usr_12345")
     
     assert status.user_id == "usr_12345"
-    assert status.personal_key_active is True
+    assert status.personal_key_active is False
+    assert status.is_key_invalid is False
     assert status.daily_system_search_count == 0
     assert status.total_system_search_count == 0
     assert isinstance(status.last_reset, datetime)

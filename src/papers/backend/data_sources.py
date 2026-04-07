@@ -1,5 +1,7 @@
 import httpx
 import logging
+import asyncio
+import random
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Type, Any
@@ -40,7 +42,13 @@ def get_data_source(
         raise ValueError(f"Unknown adapter: '{name}'")
     return _DATA_SOURCES[name](settings=settings, db=db, **kwargs)
 
+class CoreAPIError(Exception):
+    """Base exception for CORE API network and routing errors."""
+    pass
 
+class KeyInvalidatedError(CoreAPIError):
+    """Raised when the CORE API rejects a key (HTTP 401/403)."""
+    pass
 class AdapterConfig(BaseModel):
     """
     Base configuration schema for data source adapters.
@@ -84,6 +92,7 @@ class CoreConfig(AdapterConfig):
         title="Enable Personal Key",
         description="Turn off to temporarily use the system pool without deleting your saved key.",
     )
+    
 
 
 class BaseDataSource(ABC):
@@ -740,81 +749,251 @@ class CoreSource(BaseDataSource):
             self.status_db[self.user_id] = status.model_dump(mode="json")
 
         return status
+    
+    def _invalidate_personal_key(self, user_id: str, db: Any) -> None:
+        """
+        Safely marks a user's personal key as invalid.
+        """
+        from papers.backend.models import CoreUserStatus
+        
+        status_db = db.dict("core_user_status")
+        status_data = status_db.get(user_id)
+        
+        # Hacemos esto a prueba de balas: si no existe, lo creamos.
+        if status_data:
+            status = CoreUserStatus.model_validate(status_data)
+        else:
+            status = CoreUserStatus(user_id=user_id)
+            
+        status.is_key_invalid = True
+        status_db[user_id] = status.model_dump(mode="json")
 
     async def _request_with_health_check(
-        self, payload: dict, is_search: bool = False
-    ) -> Optional[dict]:
-        self.logger.info(f"🕵️‍♂️ [CORE HTTP] Iniciando petición a: {self.config.base_url}")
-        status = self._get_status()
+        self,
+        client: httpx.AsyncClient,
+        method: str,
+        url: str,
+        user_id: str,
+        api_key: str,
+        is_personal_key: bool,
+        db: Any,
+        max_retries: int = 3,
+        **kwargs
+    ) -> httpx.Response:
+        """
+        Executes an HTTP request to the CORE API with built-in resilience.
         
+        Implements:
+        - Jittered Exponential Backoff for 429 (Too Many Requests).
+        - Health invalidation for 401/403 errors.
+        - Sticks to the provided api_key for all retries within this session.
+        """
+        # Inject the provided API key into headers
+        headers = kwargs.pop("headers", {})
+        headers["Authorization"] = f"Bearer {api_key}"
+        kwargs["headers"] = headers
+
+        attempt = 0
+        while attempt < max_retries:
+            try:
+                response = await client.request(method, url, **kwargs)
+
+                # 1. Success Path
+                if response.status_code == 200:
+                    return response
+
+                # 2. Rate Limit Handling (429)
+                if response.status_code == 429:
+                    attempt += 1
+                    if attempt >= max_retries:
+                        logger.error(f"[CORE] Max retries reached for 429 on {url}")
+                        response.raise_for_status()
+
+                    # Extract requested sleep time, default to 2 seconds if missing
+                    retry_after_str = response.headers.get("Retry-After", "2")
+                    try:
+                        base_wait = float(retry_after_str)
+                    except ValueError:
+                        base_wait = 2.0
+
+                    # Apply Jitter to prevent Thundering Herd (0.5s to 2.0s random addition)
+                    jitter = random.uniform(0.5, 2.0)
+                    total_wait = base_wait + jitter
+
+                    logger.warning(
+                        f"[CORE] Rate limit hit (429). Attempt {attempt}/{max_retries}. "
+                        f"Sleeping for {total_wait:.2f}s before retrying with the same key."
+                    )
+                    await asyncio.sleep(total_wait)
+                    continue  # Retry loop with the exact same configuration
+
+                # 3. Dead Key Handling (401 / 403)
+                if response.status_code in (401, 403):
+                    logger.warning(f"[CORE] API Key rejected with status {response.status_code}.")
+                    
+                    if is_personal_key:
+                        self._invalidate_personal_key(user_id, db)
+                        logger.info(f"[CORE] Personal key for user {user_id} flagged as invalid in DB.")
+                    
+                    raise KeyInvalidatedError(f"API Key rejected: {response.status_code}")
+
+                # 4. Handle any other HTTP errors (500, 404, etc.)
+                response.raise_for_status()
+
+            except httpx.RequestError as e:
+                # Handle purely network-level exceptions (timeouts, connection drops)
+                attempt += 1
+                if attempt >= max_retries:
+                    logger.error(f"[CORE] Network error on {url}: {str(e)}")
+                    raise CoreAPIError(f"Network error: {str(e)}")
+                
+                # Basic exponential backoff for network instability
+                await asyncio.sleep(2 ** attempt)
+
+        raise CoreAPIError("Failed to complete CORE request after exhausting all retries.")
+
+    # Class-level counter for Round-Robin rotation of system keys
+    _system_key_index: int = 0
+
+    def _get_system_key(self) -> str:
+        """
+        Retrieves the next system key using a Round-Robin strategy.
+        """
+        system_keys = self.config.system_keys  # <-- CORREGIDO
+        if not system_keys:
+            raise CoreAPIError("No system keys configured in the settings pool.")
+        
+        key = system_keys[self.__class__._system_key_index % len(system_keys)]
+        self.__class__._system_key_index += 1
+        return key
+
+    def _resolve_initial_key(self) -> tuple[str, bool]:
+        """
+        Evaluates user intent and key health reading directly from BeaverDB.
+        Returns: Tuple[api_key, is_personal_key]
+        """
+        from papers.backend.models import CoreUserStatus
+        
+        # 1. Recuperamos la configuración
         configs_db = self.db.dict("user_adapter_configs")
         user_configs = configs_db.get(self.user_id, {})
-        core_user_config = user_configs.get(self.name, {})
+        core_config = user_configs.get(self.name, {})
         
-        personal_api_key = core_user_config.get("personal_api_key")
-        use_personal_key = core_user_config.get("use_personal_key", True)
+        personal_api_key = core_config.get("personal_api_key")
+        use_personal = core_config.get("use_personal_key", True)
+        
+        # 2. Si el usuario QUIERE usar su llave, verificamos su salud
+        if personal_api_key and use_personal:
+            status_db = self.db.dict("core_user_status")
+            status_data = status_db.get(self.user_id)
+            
+            if status_data:
+                status = CoreUserStatus.model_validate(status_data)
+                # Solo la usamos si sabemos que NO está inválida
+                if not status.is_key_invalid:
+                    return personal_api_key, True
+            else:
+                # Si no tiene registro de salud aún, asumimos que es buena
+                return personal_api_key, True
+                
+        # 3. Aplicamos la política de Fallback global
+        if getattr(self.config, "allow_system_fallback", True):
+            return self._get_system_key(), False
+        else:
+            raise CoreAPIError("Fallback disabled and no valid personal key available.")
 
-        keys_to_try = []
-        if use_personal_key and personal_api_key and status.personal_key_active:
-            keys_to_try.append(("personal", personal_api_key))
-            self.logger.info("🔑 [CORE HTTP] Llave personal detectada y encolada.")
-
-        if not is_search or self.config.allow_system_fallback:
-            for k in self.config.system_keys:
-                keys_to_try.append(("system", k))
-
-        self.logger.info(f"🔄 [CORE HTTP] Total de llaves a intentar: {len(keys_to_try)}")
-
-        for key_type, key_value in keys_to_try:
-            if is_search and key_type == "system":
-                if status.daily_system_search_count >= self.config.daily_search_limit:
-                    self.logger.warning(f"🛑 [CORE HTTP] Límite diario alcanzado.")
-                    continue
-
-            headers = {"Authorization": f"Bearer {key_value}"}
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                try:
-                    response = await client.post(self.config.base_url, json=payload, headers=headers)
-                    self.logger.info(f"📥 [CORE HTTP] Respuesta: {response.status_code}")
-                    
-                    if key_type == "personal" and response.status_code in (401, 403, 429):
-                        self.logger.error(f"⚠️ [CORE HTTP] Llave personal rechazada.")
-                        status.personal_key_active = False
-                        self.status_db[self.user_id] = status.model_dump(mode="json")
-                        continue
-
-                    if response.status_code == 200:
-                        if is_search and key_type == "system":
-                            status.daily_system_search_count += 1
-                            self.status_db[self.user_id] = status.model_dump(mode="json")
-                        return response.json()
-                except Exception as e:
-                    self.logger.error(f"💥 [CORE HTTP] Excepción: {str(e)}")
-                    continue
-        return None
+    async def _execute_with_fallback(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """
+        The Universal Choke Point that executes the fallback mechanism.
+        """
+        api_key, is_personal = self._resolve_initial_key()
+        client = getattr(self, "_client", httpx.AsyncClient(timeout=20.0, follow_redirects=True))        
+        try:
+            return await self._request_with_health_check(
+                client=client, method=method, url=url, user_id=self.user_id,
+                api_key=api_key, is_personal_key=is_personal, db=self.db, **kwargs
+            )
+        except KeyInvalidatedError:
+            self.logger.warning(f"[CORE] Rescue initiated for user {self.user_id}. Falling back to System Pool.")
+            fallback_key = self._get_system_key()
+            return await self._request_with_health_check(
+                client=client, method=method, url=url, user_id=self.user_id,
+                api_key=fallback_key, is_personal_key=False, db=self.db, **kwargs
+            )
 
     async def fetch_by_doi(self, doi: str) -> Optional[GlobalDocumentMeta]:
-        payload = {"q": f'doi:"{doi}"', "limit": 1}
-        data = await self._request_with_health_check(payload)
-        if not data or not data.get("results"):
-            return None
-        return self._map_to_meta(data["results"][0])
+        """
+        Fetch operation strictly parsing the JSON from the robust HTTP client.
+        """
+        url = "https://api.core.ac.uk/v3/search/works/"
+        
+        if doi.startswith("core:"):
+            core_id = doi.replace("core:", "")
+            params = {"q": f'id:"{core_id}"', "limit": 1}
+        else:
+            params = {"q": f'doi:"{doi}"', "limit": 1}
+            
+        try:
+            # Pasamos los params al Choke Point (él internamente los inyecta en la URL)
+            response = await self._execute_with_fallback(method="GET", url=url, params=params)
+            data = response.json()
+            
+            if not data or not data.get("results"):
+                return None
+                
+            return self._map_to_meta(data["results"][0])
+            
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
 
     async def search_by_text(self, query: str, limit: int = 10) -> List[GlobalDocumentMeta]:
+        """
+        Search operation that respects the business limits and network limits.
+        """
         self.logger.info(f"🔍 [CORE] Búsqueda: '{query}' (límite: {limit})")
-        payload = {"q": query, "limit": limit}
-        data = await self._request_with_health_check(payload, is_search=True)
-        if not data:
+        
+        # 1. Validación de límite de negocio (Business Quota)
+        status = self._get_status()
+        try:
+            _, is_personal = self._resolve_initial_key()
+        except CoreAPIError as e:
+            self.logger.warning(f"🛑 [CORE] {str(e)}")
             return []
         
-        results = []
-        for item in data.get("results", []):
-            try:
-                meta = self._map_to_meta(item)
-                results.append(meta)
-            except Exception as e:
-                self.logger.error(f"⚠️ [CORE] Falló parseo: {e}")
-        return results
+        if not is_personal and status.daily_system_search_count >= self.config.daily_search_limit:
+            self.logger.warning("🛑 [CORE] Daily limits reached.")
+            return []
+
+        url = "https://api.core.ac.uk/v3/search/works/"
+        params = {"q": query, "limit": limit}
+        
+        try:
+            # 2. Ejecución segura de red
+            response = await self._execute_with_fallback(method="GET", url=url, params=params)
+            data = response.json()
+            
+            # 3. Consumo de cuota (Solo si usamos llave del sistema y fue exitoso)
+            if not is_personal and response.status_code == 200:
+                status.daily_system_search_count += 1
+                self.status_db[self.user_id] = status.model_dump(mode="json")
+
+            if not data or not data.get("results"):
+                return []
+            
+            results = []
+            for item in data.get("results", []):
+                try:
+                    meta = self._map_to_meta(item)
+                    results.append(meta)
+                except Exception as e:
+                    self.logger.error(f"⚠️ [CORE] Falló parseo: {e}")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"🚨 [CORE] Excepción fatal en search_by_text: {str(e)}", exc_info=True)
+            raise e
 
     def _map_to_meta(self, item: dict) -> GlobalDocumentMeta:
         doi = item.get("doi")
@@ -854,12 +1033,33 @@ class CoreSource(BaseDataSource):
 
     @classmethod
     def apply_config_side_effects(cls, user_id: str, config: CoreConfig, db: Any) -> None:
+        """
+        Applies side effects when a user updates their CORE configuration.
+        Sets the user intent flag and resets any previous invalidation state.
+        """
         from papers.backend.models import CoreUserStatus
+        
         status_db = db.dict("core_user_status")
         status_data = status_db.get(user_id)
+        
         if status_data:
             status = CoreUserStatus.model_validate(status_data)
-            status.personal_key_active = True
+            
+            if config.personal_api_key:
+                # User provided a key: register intent and reset health status
+                status.personal_key_active = True
+                status.is_key_invalid = False
+            else:
+                # User removed their key: disable intent
+                status.personal_key_active = False
+                status.is_key_invalid = False
+                
             status_db[user_id] = status.model_dump(mode="json")
         else:
-            status_db[user_id] = CoreUserStatus(user_id=user_id, personal_key_active=True).model_dump(mode="json")
+            # First time setup
+            new_status = CoreUserStatus(
+                user_id=user_id,
+                personal_key_active=bool(config.personal_api_key),
+                is_key_invalid=False
+            )
+            status_db[user_id] = new_status.model_dump(mode="json")

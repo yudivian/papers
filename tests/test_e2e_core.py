@@ -5,25 +5,29 @@ from fastapi.testclient import TestClient
 from papers.backend.main import app
 from papers.backend.models import DownloadStatus
 from papers.backend.deps import get_settings
+import importlib
+from papers.backend.config import Settings
 
 logger = logging.getLogger(__name__)
 USER_HEADERS = {"X-User-ID": "e2e_core_researcher"}
 
-@pytest.fixture(scope="module")
-def core_e2e_client():
+
+
+# --- DEJA SOLO ESTE ---
+@pytest.fixture
+def core_e2e_client(live_app_client):
     """
-    Overrides settings to ensure 'core' is the primary source for this E2E test.
-    Using TestClient as a context manager triggers the lifespan events.
+    Usa el cliente global, pero inyecta la prioridad 'core' solo para este test.
     """
-    from papers.backend.config import Settings
-    
     test_settings = Settings.load_from_yaml()
-    test_settings.data_sources.priority = ["core"]
+    test_settings.data_sources.priority = ["cache", "core"]
+    
+    # --- AÑADE ESTA LÍNEA PARA EVITAR QUE EL TEST SE BLOQUEE A SÍ MISMO ---
+    test_settings.data_sources.core.daily_search_limit = 99999
     
     app.dependency_overrides[get_settings] = lambda: test_settings
     
-    with TestClient(app) as client:
-        yield client
+    yield live_app_client
     
     app.dependency_overrides.clear()
 
@@ -49,7 +53,8 @@ def test_core_system_workflow(core_e2e_client):
     kb_id = kb_res.json()["kb_id"]
     
     ingest_payload = {"doi": target_id, "kb_id": kb_id}
-    ingest_res = core_e2e_client.post("/api/v1/ingestion/ingest", json=ingest_payload, headers=USER_HEADERS)
+    # Línea corregida
+    ingest_res = core_e2e_client.post("/api/v1/ingestion/start", json=ingest_payload, headers=USER_HEADERS)    
     assert ingest_res.status_code == 202
     ticket_id = ingest_res.json()["ticket_id"]
 

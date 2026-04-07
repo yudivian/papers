@@ -478,9 +478,14 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
         # CORTAFUEGOS 1: Añadimos el fallback solo si es un DOI oficial
         is_official = getattr(meta, "is_official_doi", True)
         if is_official:
-            doi_fallback_url = f"https://doi.org/{doi}"
-            if doi_fallback_url not in urls_to_try:
-                urls_to_try.append(doi_fallback_url)
+            # CORE puede devolver un DOI real aunque hayamos buscado por un ID interno.
+            # Usamos el DOI del meta si existe y es real, de lo contrario usamos el argumento original.
+            actual_doi = meta.doi if (meta.doi and not meta.doi.startswith("core:")) else doi
+            
+            if not actual_doi.startswith("core:"):
+                doi_fallback_url = f"https://doi.org/{actual_doi}"
+                if doi_fallback_url not in urls_to_try:
+                    urls_to_try.append(doi_fallback_url)
 
         # Si no hay link de storage ni es un DOI oficial, abortamos
         if not urls_to_try:
@@ -521,7 +526,8 @@ async def _async_ingest(ticket_id: str, doi: str, user_id: str, kb_id: str) -> b
             meta.file_extension = ""
 
         storage = get_storage(settings.storage.selected, base_path=settings.storage.local.base_path)
-        safe_filename = f"{doi.replace('/', '_').replace(':', '_')}{meta.file_extension}"
+        final_identifier = meta.doi if meta.doi else doi
+        safe_filename = f"{final_identifier.replace('/', '_').replace(':', '_')}{meta.file_extension}"
         local_uri = await storage.save(safe_filename, asset_bytes)
 
         meta.storage_uri = local_uri

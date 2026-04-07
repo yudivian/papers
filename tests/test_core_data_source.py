@@ -121,8 +121,8 @@ async def test_core_fallback_logic_disabled(db_context, user_id, sys_settings):
 @pytest.mark.anyio
 async def test_core_personal_key_health_check_failure(db_context, user_id, sys_settings):
     """
-    Validates that if a personal key fails (e.g., 401/429), it is marked as 
-    inactive in the status DB.
+    Validates that if a personal key fails (e.g., 401/429), it is marked as
+    inactive in the status DB and successfully falls back to the system pool.
     """
     status_db = db_context.dict("core_user_status")
     configs_db = db_context.dict("user_adapter_configs")
@@ -130,16 +130,26 @@ async def test_core_personal_key_health_check_failure(db_context, user_id, sys_s
     # 1. Setup invalid personal key
     configs_db[user_id] = {
         "core": {
-            "personal_api_key": "invalid_key_xyz", 
+            "personal_api_key": "invalid_key_xyz",
             "use_personal_key": True
         }
     }
     
     source = get_data_source("core", settings=sys_settings, user_id=user_id, db=db_context)
     
-    # 2. Perform search (it will fail and trigger health check logic)
-    await source.search_by_text("test query", limit=1)
+    import httpx
+    from unittest.mock import patch
     
-    # 3. Verify personal_key_active is now False in DB
-    updated_status = CoreUserStatus.model_validate(status_db[user_id])
-    assert updated_status.personal_key_active is False
+    # Mock 1: The personal key fails (401)
+    mock_401 = httpx.Response(401, request=httpx.Request("GET", "https://api.core.ac.uk"))
+    # Mock 2: The system fallback succeeds (200)
+    mock_200 = httpx.Response(200, json={"results": []}, request=httpx.Request("GET", "https://api.core.ac.uk"))
+    
+    # Use side_effect to return 401 first, then 200
+    with patch.object(httpx.AsyncClient, "request", side_effect=[mock_401, mock_200]):
+        await source.search_by_text("test query", limit=1)
+        
+    # 2. Verify the personal key was marked invalid in the DB
+    status = status_db.get(user_id)
+    assert status is not None
+    assert status["is_key_invalid"] is True
