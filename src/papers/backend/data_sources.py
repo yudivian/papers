@@ -990,12 +990,8 @@ class CoreSource(BaseDataSource):
             raise
 
     async def search_by_text(self, query: str, limit: int = 10) -> List[GlobalDocumentMeta]:
-        """
-        Search operation that respects the business limits and network limits.
-        """
-        self.logger.info(f"🔍 [CORE] Búsqueda: '{query}' (límite: {limit})")
+        self.logger.info(f"🔍 [CORE] Búsqueda en Outputs: '{query}' (límite: {limit})")
         
-        # 1. Validación de límite de negocio (Business Quota)
         status = self._get_status()
         try:
             _, is_personal = self._resolve_initial_key()
@@ -1007,75 +1003,84 @@ class CoreSource(BaseDataSource):
             self.logger.warning("🛑 [CORE] Daily limits reached.")
             return []
 
-        url = "https://api.core.ac.uk/v3/search/works/"
-        
-        # --- CORRECCIÓN DE LA QUERY PARA LUCENE (CORE API) ---
-        # Limpiamos el texto y lo forzamos a buscar la frase exacta en título, 
-        # abstract, o en general, usando comillas para que no lo fragmente.
-        clean_q = query.strip()
-        lucene_q = f'title:("{clean_q}") OR abstract:("{clean_q}") OR "{clean_q}"'
-        
-        params = {
-            "q": lucene_q, 
-            "limit": limit
-        }
-        # -----------------------------------------------------
+        # Endpoint de registros individuales (Outputs) para garantizar el limit exacto
+        url = "https://api.core.ac.uk/v3/search/outputs/"
+        params = {"q": query, "limit": limit}
         
         try:
-            # 2. Ejecución segura de red
             response = await self._execute_with_fallback(method="GET", url=url, params=params)
             data = response.json()
             
-            # 3. Consumo de cuota (Solo si usamos llave del sistema y fue exitoso)
             if not is_personal and response.status_code == 200:
                 status.daily_system_search_count += 1
                 self.status_db[self.user_id] = status.model_dump(mode="json")
 
-            if not data or not data.get("results"):
-                return []
-            
+            api_results = data.get("results", [])
             results = []
-            for item in data.get("results", []):
+            for item in api_results:
                 try:
                     meta = self._map_to_meta(item)
                     results.append(meta)
                 except Exception as e:
-                    self.logger.error(f"⚠️ [CORE] Falló parseo: {e}")
+                    self.logger.error(f"⚠️ [CORE] Falló mapeo de Output: {e}")
+            
             return results
             
         except Exception as e:
-            self.logger.error(f"🚨 [CORE] Excepción fatal en search_by_text: {str(e)}", exc_info=True)
+            self.logger.error(f"🚨 [CORE] Error en búsqueda: {str(e)}", exc_info=True)
             raise e
 
+
     def _map_to_meta(self, item: dict) -> GlobalDocumentMeta:
-        year = None
-        pub_date = item.get("publishedDate")
+        # 1. IDENTIDAD (Igual que en OpenAlex)
+        doi_val = item.get("doi")
+        if doi_val:
+            final_doi = doi_val.replace("https://doi.org/", "")
+            is_official = True
+        else:
+            # Fallback a ID de CORE para evitar descartes
+            core_id = str(item.get("id", ""))
+            final_doi = f"core:{core_id}"
+            is_official = False
+
+        # 2. AUTORES Y AÑO
+        authors = []
+        for a in (item.get("authors") or []):
+            if isinstance(a, dict) and a.get("name"):
+                authors.append(a["name"])
+            elif isinstance(a, str):
+                authors.append(a)
+
+        year = 0
+        pub_date = item.get("yearPublished") or item.get("publishedDate")
         if pub_date:
             try:
-                # pub_date suele venir como "2023-10-01T00:00:00Z"
-                year = int(pub_date[:4])
+                year = int(str(pub_date)[:4])
             except (ValueError, TypeError):
-                year = None
+                pass
 
-        # Autores seguros (CORE los manda en una lista de dicts o a veces null)
-        authors = []
-        raw_authors = item.get("authors") or []
-        for author in raw_authors:
-            if isinstance(author, dict) and author.get("name"):
-                authors.append(author["name"])
-            elif isinstance(author, str):
-                authors.append(author)
+        # 3. METADATOS COMPLEMENTARIOS
+        # Usamos topics de CORE como keywords
+        keywords = [str(t) for t in item.get("topics", [])[:10]]
+        
+        # Usamos el publisher como institución si está disponible
+        institutions = []
+        if item.get("publisher"):
+            institutions.append(str(item.get("publisher")))
 
-        # Retornar el modelo asegurando que abstract y título nunca rompan si son null
+        # 4. CONSTRUCCIÓN DEL MODELO
         return GlobalDocumentMeta(
-            source="core",
-            external_id=str(item.get("id")),
+            doi=final_doi,
+            is_official_doi=is_official,
             title=item.get("title") or "Sin título",
-            abstract=item.get("abstract") or "Sin resumen disponible.", # Previene fallos si es null
             authors=authors,
             year=year,
-            url=item.get("downloadUrl") or item.get("sourceUrl"),
-            doi=item.get("doi")
+            file_size=0,  # Inicializado para Discovery
+            storage_uri=item.get("downloadUrl") or item.get("sourceUrl") or "",
+            source=self.name,
+            abstract=item.get("abstract") or "",
+            keywords=keywords,
+            institutions=institutions
         )
 
     @classmethod
