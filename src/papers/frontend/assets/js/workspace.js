@@ -66,6 +66,7 @@ $(document).ready(function () {
         e.preventDefault();
         executeEdit();
     });
+    
 });
 
 function loadKBs() {

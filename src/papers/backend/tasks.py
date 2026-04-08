@@ -32,7 +32,7 @@ def get_task_infrastructure():
     Bootstraps the required infrastructure within the worker execution context.
     """
     settings = Settings.load_from_yaml()
-    db = BeaverDB(settings.database.file)
+    db = get_db()
     return settings, db
 
 manager = Manager(get_db())

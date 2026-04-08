@@ -190,7 +190,7 @@ $(document).ready(function () {
             document.body.appendChild(modalTpl.content.cloneNode(true));
             setupModalListeners(); // Asegúrate de que esta función exista más abajo
         }
-        restoreTasks();
+        // restoreTasks();
     });
 
     $('#btn-search-doi').on('click', handleDoiSearch);

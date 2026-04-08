@@ -31,6 +31,9 @@ const UI = {
     loadDownloadsPanel: function () {
         $.get('/components/downloads_panel.html', function (html) {
             $('body').append(html);
+            if (typeof restoreTasks === 'function') {
+                restoreTasks();
+            }
         });
     },
 
