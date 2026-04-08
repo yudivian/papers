@@ -63,6 +63,14 @@ $(document).ready(function () {
         }
     }
 
+    $(document).on('click', '#openSidebarMobileBtn', function () {
+        $('#mobileSidebarOverlay').removeClass('hidden');
+        setTimeout(() => {
+            $('#mobileSidebarOverlay').removeClass('opacity-0').addClass('opacity-100');
+            $('#mainSidebar').removeClass('-translate-x-full');
+        }, 10);
+    });
+
     // Eventos delegados para abrir/cerrar el panel deslizante (Sin bloqueo)
     // Eventos delegados para abrir/cerrar el panel deslizante (Sin bloqueo)
     $(document).on('click', '#openDownloadsBtn', function () {
@@ -295,7 +303,7 @@ window.refreshUsageMetrics = function () {
                 $('#usage-kb-count').text(res.kb_count || 0);
                 $('#usage-doc-count').text(res.document_count || 0);
 
-                
+
             }
         },
         error: function (err) {

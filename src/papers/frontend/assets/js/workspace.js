@@ -53,13 +53,6 @@ $(document).ready(function () {
         closeConfirmModal();
     });
 
-    $(document).on('click', '#openSidebarMobileBtn', function () {
-        $('#mobileSidebarOverlay').removeClass('hidden');
-        setTimeout(() => {
-            $('#mobileSidebarOverlay').removeClass('opacity-0').addClass('opacity-100');
-            $('#mainSidebar').removeClass('-translate-x-full');
-        }, 10);
-    });
 
     $('#btnCloseEditModal, #btnCancelEditModal').on('click', closeEditModal);
     $('#formEditKB').on('submit', function (e) {
