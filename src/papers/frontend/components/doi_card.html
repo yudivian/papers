@@ -53,6 +53,18 @@
                     <option value="" disabled selected>Select a Knowledge Base...</option>
                 </select>
 
+                <div class="mb-6 text-right">
+                    <button type="button" class="js-btn-reveal-new-kb text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">
+                        + Crear nueva KB
+                    </button>
+                </div>
+                <div class="js-inline-kb-creation hidden mb-6 flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <input type="text" placeholder="Nombre de la nueva KB" class="js-inline-kb-name flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none">
+                    <button type="button" class="js-btn-save-inline-kb px-3 py-1.5 bg-slate-900 text-white text-sm font-bold rounded hover:bg-slate-800 transition-colors whitespace-nowrap">
+                        Crear
+                    </button>
+                </div>
+
                 <div class="flex justify-end gap-3">
                     <button id="btn-modal-cancel"
                         class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Cancel</button>

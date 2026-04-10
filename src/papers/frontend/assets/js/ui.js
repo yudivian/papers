@@ -107,10 +107,68 @@ $(document).ready(function () {
     });
 
     // EVENTO CERRAR
+    // EVENTO CERRAR
     $(document).on('click', '#closeUsageBtn, #usage-backdrop', function () {
         $('#usage-backdrop').addClass('hidden');
         $('#usagePanel').addClass('translate-x-full');
     });
+
+    // --- CREACIÓN INLINE DE KBs ---
+    // --- CREACIÓN INLINE DE KBs (Global y dinámico) ---
+$(document).on('click', '.js-btn-reveal-new-kb', function() {
+    // Busca el cuadro blanco principal de ESTE modal específico
+    const $modalContext = $(this).closest('.bg-white');
+    const $creationDiv = $modalContext.find('.js-inline-kb-creation');
+    
+    $creationDiv.toggleClass('hidden');
+    if (!$creationDiv.hasClass('hidden')) {
+        $modalContext.find('.js-inline-kb-name').focus();
+    }
+});
+
+$(document).on('click', '.js-btn-save-inline-kb', function() {
+    const $btn = $(this);
+    const $modalContext = $btn.closest('.bg-white');
+    const $input = $modalContext.find('.js-inline-kb-name');
+    const $select = $modalContext.find('select'); // Encuentra el <select> de este modal
+    const kbName = $input.val().trim();
+
+    if (!kbName) return;
+
+    $btn.text('...').prop('disabled', true);
+    const token = localStorage.getItem('auth_token');
+
+    $.ajax({
+        url: '/api/v1/kbs',
+        type: 'POST',
+        contentType: 'application/json',
+        headers: {
+            'Authorization': 'Bearer ' + token
+        },
+        data: JSON.stringify({ name: kbName, description: "Creada automáticamente desde el selector" }),
+        success: function(response) {
+            const newId = response.kb_id || response.id || response.name;
+            const newOption = new Option(response.name, newId, true, true);
+            
+            // Se inserta en el dropdown del modal abierto y se selecciona
+            $select.append(newOption).trigger('change');
+            
+            // Limpieza
+            $input.val('');
+            $modalContext.find('.js-inline-kb-creation').addClass('hidden');
+            
+            if (typeof currentKBsData !== 'undefined') currentKBsData.push(response);
+            if (window.showToast) window.showToast('Knowledge Base creada.', 'success');
+        },
+        error: function(err) {
+            console.error("Error creando KB:", err);
+            if (window.showToast) window.showToast('Error creando la KB.', 'error');
+        },
+        complete: function() {
+            $btn.text('Crear').prop('disabled', false);
+        }
+    });
+});
 });
 
 let taskIntervals = {};

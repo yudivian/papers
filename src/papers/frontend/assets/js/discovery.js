@@ -483,3 +483,4 @@ function openTransferModal(actionType, doi, sourceKbId) {
         }
     });
 }
+

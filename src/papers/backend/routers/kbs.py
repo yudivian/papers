@@ -44,6 +44,7 @@ class KBDetailResponse(BaseModel):
     name: str
     description: str
     documents: List[GlobalDocumentMeta]
+    created_at: Optional[datetime] = None
 
 class KBTransferRequest(BaseModel):
     """
@@ -159,7 +160,8 @@ async def get_knowledge_base(
         kb_id=kb_data["kb_id"],
         name=kb_data["name"],
         description=kb_data["description"],
-        documents=hydrated_docs
+        documents=hydrated_docs,
+        created_at=kb_data.get("created_at")
     )
 
 @router.delete("/{kb_id}")

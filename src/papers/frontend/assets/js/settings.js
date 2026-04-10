@@ -146,6 +146,27 @@ function renderAdapterForm(sourceId, schema) {
             $form.append($fieldDiv);
         });
 
+        const $saveBtn = $('<button>')
+            .attr('type', 'button')
+            .addClass('w-full mt-6 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-lg shadow-sm transition-colors')
+            .text('Save Configuration')
+            .on('click', function(e) {
+                e.preventDefault();
+                const btn = $(this);
+                const originalText = btn.text();
+                btn.text('Saving...').prop('disabled', true).addClass('opacity-70');
+                
+                // Llamamos a la función huérfana
+                saveAdapterConfig(sourceId, $form, schema);
+                
+                // Restauramos el botón después de 1 segundo para feedback visual
+                setTimeout(() => {
+                    btn.text(originalText).prop('disabled', false).removeClass('opacity-70');
+                }, 1000);
+            });
+        
+        $form.append($saveBtn);
+
         if ($header.children().length > 0) formContainer.append($header);
         formContainer.append($form);
 
