@@ -966,7 +966,7 @@ class CoreSource(BaseDataSource):
         """
         Fetch operation strictly parsing the JSON from the robust HTTP client.
         """
-        url = "https://api.core.ac.uk/v3/search/works/"
+        url = "https://api.core.ac.uk/v3/search/outputs/"
         
         if doi.startswith("core:"):
             core_id = doi.replace("core:", "")
@@ -1034,11 +1034,31 @@ class CoreSource(BaseDataSource):
     def _map_to_meta(self, item: dict) -> GlobalDocumentMeta:
         # 1. IDENTIDAD (Igual que en OpenAlex)
         doi_val = item.get("doi")
+        
+        # 2. Intento secundario: escarbar en los identificadores
+        if not doi_val and "identifiers" in item:
+            for ident in item.get("identifiers", []):
+                # CORE a veces devuelve diccionarios o strings planos
+                ident_str = ident.get("identifier", "") if isinstance(ident, dict) else str(ident)
+                if ident_str.startswith("10.") or "doi.org/" in ident_str:
+                    doi_val = ident_str
+                    break
+
+        # 3. Intento terciario: revisar las URLs de origen
+        if not doi_val:
+            urls = item.get("sourceFulltextUrls", [])
+            for url in urls:
+                if isinstance(url, str) and "doi.org/" in url:
+                    doi_val = url.split("doi.org/")[1]
+                    break
+
+        # 4. Consolidación de Identidad
         if doi_val:
-            final_doi = doi_val.replace("https://doi.org/", "")
+            # Limpiamos el formato URL para quedarnos con el DOI canónico
+            final_doi = doi_val.replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
             is_official = True
         else:
-            # Fallback a ID de CORE para evitar descartes
+            # Fallback (Solo si de verdad no existe DOI en ningún lado)
             core_id = str(item.get("id", ""))
             final_doi = f"core:{core_id}"
             is_official = False
@@ -1072,7 +1092,7 @@ class CoreSource(BaseDataSource):
         return GlobalDocumentMeta(
             doi=final_doi,
             is_official_doi=is_official,
-            title=item.get("title") or "Sin título",
+            title=item.get("title") or "Untitled",
             authors=authors,
             year=year,
             file_size=0,  # Inicializado para Discovery

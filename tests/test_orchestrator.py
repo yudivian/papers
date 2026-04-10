@@ -2,30 +2,42 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from beaver import BeaverDB
 
+from papers.backend import deps
 from papers.backend.orchestrator import DiscoveryOrchestrator
 from papers.backend.config import Settings
 from papers.backend.models import GlobalDocumentMeta
 
 @pytest.fixture
-def mock_context(tmp_path):
+def sys_settings(tmp_path):
     """
-    Provisions a minimal settings and DB context for orchestration testing.
+    Hybrid strategy: Loads real configuration for structure/keys but isolates
+    database and storage to a temporary directory for orchestration tests.
     """
     settings = Settings.load_from_yaml()
-    settings.data_sources.priority = ["cache", "openalex"]
+    settings.database.file = str(tmp_path / "test_orchestrator.db")
+    settings.storage.selected = "local"
+    settings.storage.local.base_path = str(tmp_path / "storage_orch")
     
-    db_path = tmp_path / "orch.db"
-    db = BeaverDB(str(db_path))
-    
-    return {
-        "settings": settings,
-        "db": db,
-        "user_id": "orch_user"
-    }
+    # Reset global singleton to force reload with new settings
+    deps._global_db = None
+    with patch("papers.backend.config.Settings.load_from_yaml", return_value=settings):
+        yield settings
+    deps._global_db = None
+
+@pytest.fixture
+def db_context(sys_settings):
+    """
+    Provides a fresh, isolated BeaverDB instance for each orchestrator test.
+    """
+    return BeaverDB(sys_settings.database.file)
+
+@pytest.fixture
+def user_id():
+    return "orch_user"
 
 @pytest.mark.anyio
 @patch("papers.backend.orchestrator.get_data_source")
-async def test_orchestrator_parallel_search(mock_get_source, mock_context):
+async def test_orchestrator_parallel_search(mock_get_source, db_context, sys_settings, user_id):
     """
     Verifies that the orchestrator executes parallel queries and maps results accurately.
 
@@ -46,10 +58,11 @@ async def test_orchestrator_parallel_search(mock_get_source, mock_context):
 
     mock_get_source.side_effect = side_effect
 
+    sys_settings.data_sources.priority = ["cache", "openalex"] # Set explicit for test
     orchestrator = DiscoveryOrchestrator(
-        settings=mock_context["settings"],
-        db=mock_context["db"],
-        user_id=mock_context["user_id"]
+        settings=sys_settings,
+        db=db_context,
+        user_id=user_id
     )
 
     results = await orchestrator.search("test query")
@@ -62,7 +75,7 @@ async def test_orchestrator_parallel_search(mock_get_source, mock_context):
 
 @pytest.mark.anyio
 @patch("papers.backend.orchestrator.get_data_source")
-async def test_orchestrator_waterfall_resolution(mock_get_source, mock_context):
+async def test_orchestrator_waterfall_resolution(mock_get_source, db_context, sys_settings, user_id):
     """
     Validates the prioritized waterfall strategy for DOI resolution.
 
@@ -80,9 +93,9 @@ async def test_orchestrator_waterfall_resolution(mock_get_source, mock_context):
     mock_get_source.side_effect = [cache_source, oa_source]
 
     orchestrator = DiscoveryOrchestrator(
-        settings=mock_context["settings"],
-        db=mock_context["db"],
-        user_id=mock_context["user_id"]
+        settings=sys_settings,
+        db=db_context,
+        user_id=user_id
     )
 
     result = await orchestrator.resolve_doi("10.test/1")
@@ -95,19 +108,15 @@ async def test_orchestrator_waterfall_resolution(mock_get_source, mock_context):
 
 
 @pytest.mark.anyio
-async def test_orchestrator_executes_core_source(mock_context):
+async def test_orchestrator_executes_core_source(db_context, sys_settings, user_id):
     """
     Verifies that the orchestrator calls search_by_text on CoreSource
     if 'core' is in the priority list.
     """
-    settings = mock_context["settings"]
-    db = mock_context["db"]
-    user_id = mock_context["user_id"]
-
     # Force the priority locally for the test
-    settings.data_sources.priority = ["core"]
+    sys_settings.data_sources.priority = ["core"]
     
-    orchestrator = DiscoveryOrchestrator(settings=settings, db=db, user_id=user_id)
+    orchestrator = DiscoveryOrchestrator(settings=sys_settings, db=db_context, user_id=user_id)
     
     # Mock the adapter's specific method to avoid real HTTP requests
     with patch("papers.backend.data_sources.CoreSource.search_by_text") as mock_core_search:

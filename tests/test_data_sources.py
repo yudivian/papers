@@ -1,26 +1,46 @@
 import pytest
-import os
 from datetime import datetime, timezone, timedelta
 from beaver import BeaverDB
 from papers.backend.data_sources import get_data_source
 from papers.backend.models import OpenAlexUserStatus
 from papers.backend.config import Settings
+from unittest.mock import patch
+from papers.backend import deps
 
 # ==============================================================================
 # FIXTURES
 # ==============================================================================
 
-@pytest.fixture
-def sys_settings():
-    return Settings.load_from_yaml()
+
 
 @pytest.fixture
-def db_context(tmp_path):
+def sys_settings(tmp_path):
     """
-    Provides a volatile BeaverDB instance for isolation.
+    Loads real configuration but isolates database and storage paths.
+    Uses a patch to ensure all components use this temporary configuration.
     """
-    db_path = tmp_path / "test_integration.db"
-    return BeaverDB(str(db_path))
+    settings = Settings.load_from_yaml()
+    settings.database.file = str(tmp_path / "test.db")
+    settings.storage.selected = "local"
+    settings.storage.local.base_path = str(tmp_path / "files")
+    
+    deps._global_db = None
+    with patch("papers.backend.config.Settings.load_from_yaml", return_value=settings):
+        yield settings
+    deps._global_db = None
+
+@pytest.fixture
+def db_context(sys_settings):
+    """
+    Provides a fresh database and resets system usage counters to ensure
+    that system API keys are always included in the request loop.
+    """
+    db = BeaverDB(sys_settings.database.file)
+    
+    db.dict("openalex_system_status")["global_usage"] = 0
+    db.dict("core_system_status")["global_usage"] = 0
+    
+    return db
 
 @pytest.fixture
 def user_id():

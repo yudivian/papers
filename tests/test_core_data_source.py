@@ -4,25 +4,43 @@ from beaver import BeaverDB
 from papers.backend.data_sources import get_data_source
 from papers.backend.models import CoreUserStatus
 from papers.backend.config import Settings
+from unittest.mock import patch
+from papers.backend import deps
+
+
 
 # ==============================================================================
 # FIXTURES
 # ==============================================================================
 
 @pytest.fixture
-def sys_settings():
+def sys_settings(tmp_path):
     """
-    Loads the system configuration, ensuring CORE is present.
+    Hybrid strategy: Loads real configuration but isolates database and storage paths.
+    Uses a patch to ensure all components use this temporary configuration.
     """
-    return Settings.load_from_yaml()
+    settings = Settings.load_from_yaml()
+    settings.database.file = str(tmp_path / "test_core.db")
+    settings.storage.selected = "local"
+    settings.storage.local.base_path = str(tmp_path / "files_core")
+    
+    deps._global_db = None
+    with patch("papers.backend.config.Settings.load_from_yaml", return_value=settings):
+        yield settings
+    deps._global_db = None
+
 
 @pytest.fixture
-def db_context(tmp_path):
+def db_context(sys_settings):
     """
-    Provides a volatile BeaverDB instance for isolation during testing.
+    Provides a fresh database for each test and resets CORE system usage counters
+    to ensure that system API keys are always included in the request loop.
     """
-    db_path = tmp_path / "test_core_integration.db"
-    return BeaverDB(str(db_path))
+    db = BeaverDB(sys_settings.database.file)
+    
+    db.dict("core_system_status")["global_usage"] = 0
+    
+    return db
 
 @pytest.fixture
 def user_id():

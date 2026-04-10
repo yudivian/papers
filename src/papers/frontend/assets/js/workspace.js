@@ -296,8 +296,21 @@ function renderKBDocument(doc, kbId) {
     if (doc.year) $item.find('.js-doc-year').text(doc.year).removeClass('hidden');
     if (doc.file_size) $item.find('.js-doc-size').text(formatBytes(doc.file_size)).removeClass('hidden');
     if (doc.doi) {
-        const doiLink = doc.doi.startsWith('http') ? doc.doi : `https://doi.org/${doc.doi}`;
-        $item.find('.js-doc-doi').text(doc.doi).attr('href', doiLink).removeClass('hidden');
+        const $doiElement = $item.find('.js-doc-doi');
+        const isOfficialBackend = doc.is_official_doi !== false;
+        
+        const sanitizedDoi = (typeof sanitizeAndValidateDoi === 'function') 
+                                ? sanitizeAndValidateDoi(doc.doi) 
+                                : doc.doi;
+
+        if (isOfficialBackend && sanitizedDoi && sanitizedDoi.includes('10.')) {
+            const doiLink = sanitizedDoi.startsWith('http') ? sanitizedDoi : `https://doi.org/${sanitizedDoi}`;
+            $doiElement.text(sanitizedDoi).attr('href', doiLink).removeClass('hidden');
+        } else {
+            $doiElement.addClass('hidden');
+        }
+    } else {
+        $item.find('.js-doc-doi').addClass('hidden');
     }
 
     if (doc.venue || doc.publisher) {

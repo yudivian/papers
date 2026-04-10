@@ -13,13 +13,13 @@ from beaver import BeaverDB
 
 from papers.backend.main import app
 from papers.backend.deps import get_db, get_current_user, get_settings
-from papers.backend.models import DownloadStatus, GlobalDocumentMeta
-from papers.backend.config import Settings
+from papers.backend.models import GlobalDocumentMeta
+
 
 client = TestClient(app)
 
 @pytest.fixture
-def api_env(tmp_path):
+def api_env(tmp_path, mock_global_settings):
     """
     Provisions an isolated testing environment with dependency overrides.
     """
@@ -29,12 +29,11 @@ def api_env(tmp_path):
     
     test_db = BeaverDB(str(db_path))
 
-    test_settings = Settings.load_from_yaml()
-    test_settings.storage.local.base_path = str(storage_path)
+    mock_global_settings.storage.local.base_path = str(storage_path)
 
     app.dependency_overrides[get_db] = lambda: test_db
     app.dependency_overrides[get_current_user] = lambda: "authorized_test_user"
-    app.dependency_overrides[get_settings] = lambda: test_settings
+    app.dependency_overrides[get_settings] = lambda: mock_global_settings
 
     yield {
         "db": test_db,

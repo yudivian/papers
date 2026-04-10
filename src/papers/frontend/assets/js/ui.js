@@ -362,3 +362,8 @@ window.refreshUsageMetrics = function () {
         }
     });
 };
+
+function sanitizeAndValidateDoi(input) {
+    let clean = input.trim().replace(/^(https?:\/\/)?(dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '');
+    return /^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/i.test(clean) ? clean : null;
+}

@@ -1,8 +1,8 @@
 import pytest
 from datetime import datetime, timezone
 from pydantic import ValidationError
-from src.papers.backend.models import CoreUserStatus
-from src.papers.backend.config import CoreConfig, DataSourcesConfig, OpenAlexConfig
+from papers.backend.models import CoreUserStatus
+from papers.backend.config import CoreConfig, DataSourcesConfig, OpenAlexConfig
 
 def test_core_config_defaults():
     """

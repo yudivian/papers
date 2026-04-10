@@ -1,14 +1,5 @@
-"""
-Test suite for the extensible storage layer.
-
-Validates the registry pattern, local file system operations, and security 
-constraints such as directory traversal prevention. Ensures full coverage 
-of the BaseStorage interface implementation.
-"""
 import pytest
 import os
-import shutil
-import tempfile
 from datetime import datetime
 from anyio import Path
 from fastapi.responses import FileResponse
@@ -22,14 +13,13 @@ def anyio_backend():
     return "asyncio"
 
 @pytest.fixture
-def temp_storage_dir():
+def temp_storage_dir(tmp_path):
     """
-    Creates a temporary directory for file system operations and ensures 
-    cleanup after the test suite completes.
+    Provides a temporary directory for file system operations using pytest's native tmp_path.
     """
-    path = tempfile.mkdtemp()
-    yield path
-    shutil.rmtree(path)
+    storage_dir = tmp_path / "storages_test"
+    storage_dir.mkdir(exist_ok=True)
+    return str(storage_dir)
 
 def test_storage_registry_resolution():
     """

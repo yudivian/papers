@@ -1,166 +1,3 @@
-/**
- * Papers Discovery & Task Monitor
- * Lógica de búsqueda por DOI y gestión manual de ingesta.
- */
-
-// let pendingData = { doi: null, title: null };
-// let taskIntervals = {}; // Control de polling por ticket
-
-// function sanitizeAndValidateDoi(input) {
-//     let clean = input.trim().replace(/^(https?:\/\/)?(dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '');
-//     return /^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/i.test(clean) ? clean : null;
-// }
-
-// $(document).ready(function () {
-//     // 1. Cargar componentes e inicializar el monitor
-//     $.get('/components/doi_card.html', function (html) {
-//         $('body').append(html);
-
-//         // Extraer y activar el modal
-//         const modalTpl = document.getElementById('tpl-kb-modal');
-//         if (modalTpl) {
-//             document.body.appendChild(modalTpl.content.cloneNode(true));
-//             setupModalListeners();
-//         }
-
-//         // Cargar historial de tareas del usuario
-//         restoreTasks();
-//     });
-
-//     // 2. Listener de búsqueda
-//     $('#btn-search-doi').on('click', handleDoiSearch);
-// });
-
-// $(document).ready(function() {
-
-//     // ---------------------------------------------------------
-//     // 1. LÓGICA DE PESTAÑAS (TABS)
-//     // ---------------------------------------------------------
-//     $('#tab-btn-doi').on('click', function() {
-//         // Estilos de botones
-//         $(this).addClass('border-blue-600 text-blue-600').removeClass('border-transparent text-slate-500');
-//         $('#tab-btn-text').removeClass('border-blue-600 text-blue-600').addClass('border-transparent text-slate-500');
-//         // Mostrar/Ocultar contenido
-//         $('#tab-content-doi').removeClass('hidden').addClass('block');
-//         $('#tab-content-text').removeClass('block').addClass('hidden');
-//         $('#discovery-results').empty(); // Limpiar resultados al cambiar
-//     });
-
-//     $('#tab-btn-text').on('click', function() {
-//         // Estilos de botones
-//         $(this).addClass('border-blue-600 text-blue-600').removeClass('border-transparent text-slate-500');
-//         $('#tab-btn-doi').removeClass('border-blue-600 text-blue-600').addClass('border-transparent text-slate-500');
-//         // Mostrar/Ocultar contenido
-//         $('#tab-content-text').removeClass('hidden').addClass('block');
-//         $('#tab-content-doi').removeClass('block').addClass('hidden');
-//         $('#discovery-results').empty(); // Limpiar resultados al cambiar
-//     });
-
-//     // ---------------------------------------------------------
-//     // 2. INICIALIZAR EL SELECTOR DE FUENTES (Llamada a API)
-//     // ---------------------------------------------------------
-//     // Asumiendo que tu router está en /api/v1/sources
-//     $.get('/api/v1/sources', function(sources) {
-//         const $select = $('#source-select');
-//         sources.forEach(src => {
-//             // No añadimos la caché de nuevo porque ya la pusimos fija en el HTML
-//             if (src.id !== 'cache') {
-//                 $select.append(`<option value="${src.id}">🌐 ${src.name}</option>`);
-//             }
-//         });
-//     }).fail(function() {
-//         console.warn("Could not load data sources from API.");
-//     });
-
-//     // ---------------------------------------------------------
-//     // 3. EL MOTOR DE BÚSQUEDA TEXTUAL Y RENDERIZADO
-//     // ---------------------------------------------------------
-//     $('#btn-search-text').on('click', function() {
-//         const query = $('#text-search-input').val().trim();
-//         const targetSource = $('#source-select').val(); // Si está vacío "", el backend busca en todos
-
-//         if (!query) {
-//             if (window.showToast) window.showToast('Please enter a search term.', 'warning');
-//             return;
-//         }
-
-//         const $container = $('#discovery-results');
-
-//         // Estado de carga elegante
-//         $container.html(`
-//             <div class="text-center py-10">
-//                 <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-//                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-//                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-//                 </svg>
-//                 <p class="text-slate-500 font-medium">Scanning knowledge bases & external sources...</p>
-//             </div>
-//         `);
-
-//         // Llamada a tu endpoint de Orquestador
-//         $.ajax({
-//             url: '/api/v1/discovery/search',
-//             type: 'GET',
-//             data: { 
-//                 q: query, 
-//                 limit: 10,
-//                 ...(targetSource ? { source: targetSource } : {}) // Solo envía 'source' si se eligió uno
-//             },
-//             success: function(response) {
-//                 $container.empty();
-
-//                 // Validar si vino totalmente vacío
-//                 if (Object.keys(response).length === 0) {
-//                     $container.html('<div class="text-center py-10 text-slate-500">No documents found across any source.</div>');
-//                     return;
-//                 }
-
-//                 // --- PASO 1: PRIORIDAD ABSOLUTA A LA CACHÉ LOCAL ---
-//                 if (response.cache && response.cache.length > 0) {
-//                     // Pintamos el separador
-//                     $container.append(`
-//                         <div class="mb-4 mt-2 pb-2 border-b-2 border-emerald-100 flex items-center">
-//                             <h3 class="text-sm font-bold text-emerald-700 uppercase tracking-widest flex items-center gap-2">
-//                                 <span>📦</span> Found in Local Cache (${response.cache.length})
-//                             </h3>
-//                         </div>
-//                     `);
-//                     // Pintamos las tarjetas (gracias a renderDoiCard, el botón saldrá VERDE)
-//                     response.cache.forEach(doc => renderDoiCard(doc, $container));
-
-//                     // Borramos la caché del diccionario para no volver a iterarla en el paso 2
-//                     delete response.cache;
-//                 }
-
-//                 // --- PASO 2: ITERAR FUENTES EXTERNAS RESTANTES ---
-//                 Object.keys(response).forEach(sourceName => {
-//                     const docs = response[sourceName];
-//                     if (docs && docs.length > 0) {
-//                         const displayName = sourceName.charAt(0).toUpperCase() + sourceName.slice(1); // ej: "openalex" -> "Openalex"
-
-//                         // Pintamos el separador
-//                         $container.append(`
-//                             <div class="mb-4 mt-8 pb-2 border-b-2 border-blue-100 flex items-center">
-//                                 <h3 class="text-sm font-bold text-blue-700 uppercase tracking-widest flex items-center gap-2">
-//                                     <span>🌐</span> Found via ${displayName} (${docs.length})
-//                                 </h3>
-//                             </div>
-//                         `);
-//                         // Pintamos las tarjetas (saldrán con el botón AZUL)
-//                         docs.forEach(doc => renderDoiCard(doc, $container));
-//                     }
-//                 });
-//             },
-//             error: function(xhr) {
-//                 console.error("Search Error:", xhr);
-//                 $container.html('<div class="text-center py-10 text-red-500 font-medium">Error performing semantic search. Please try again.</div>');
-//                 if (window.showToast) window.showToast('Search failed.', 'error');
-//             }
-//         });
-//     });
-
-// });
-
 
 /**
  * Papers Discovery & Task Monitor
@@ -170,10 +7,7 @@ let pendingData = { doi: null, title: null };
 
 let availableSources = []; // <-- VARIABLE NUEVA PARA GUARDAR LAS FUENTES
 
-function sanitizeAndValidateDoi(input) {
-    let clean = input.trim().replace(/^(https?:\/\/)?(dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '');
-    return /^10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+$/i.test(clean) ? clean : null;
-}
+
 
 // =====================================================================
 // BLOQUE PRINCIPAL (Al cargar la página)
@@ -377,8 +211,22 @@ function renderDoiCard(meta, $container) {
         $item.find('.js-doc-year').text(meta.year).removeClass('hidden');
     }
     if (meta.doi) {
-        const doiLink = meta.doi.startsWith('http') ? meta.doi : `https://doi.org/${meta.doi}`;
-        $item.find('.js-doc-doi').text(meta.doi).attr('href', doiLink).removeClass('hidden');
+        const $doiElement = $item.find('.js-doc-doi');
+        
+        // 1. Verificamos que el backend no lo haya marcado explícitamente como falso
+        const isOfficialBackend = meta.is_official_doi !== false;
+        
+        // 2. Lo pasamos por tu validador de regex del frontend
+        const sanitizedDoi = sanitizeAndValidateDoi(meta.doi);
+
+        // Si pasa AMBAS pruebas, es un DOI real: construimos el link y lo mostramos
+        if (isOfficialBackend && sanitizedDoi) {
+            const doiLink = sanitizedDoi.startsWith('http') ? sanitizedDoi : `https://doi.org/${sanitizedDoi}`;
+            $doiElement.text(sanitizedDoi).attr('href', doiLink).removeClass('hidden');
+        } else {
+            // Es un ID interno (ej. core:11469887). Lo ocultamos completamente de la interfaz.
+            $doiElement.addClass('hidden');
+        }
     }
     if (meta.source) {
         $item.find('.js-doc-source').text(meta.source).removeClass('hidden');

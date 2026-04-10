@@ -1,38 +1,36 @@
-"""
-Integration test suite for the semantic indexing pipeline.
-"""
 import os
-import shutil
-import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
 from beaver import BeaverDB
 
+from papers.backend import deps
 from papers.backend.tasks import _async_ingest
 from papers.backend.data_sources import get_data_source
 from papers.backend.models import GlobalDocumentMeta, DownloadStatus
 from papers.backend.config import Settings
 
 @pytest.fixture
-def integration_env():
+def sys_settings(tmp_path):
     """
-    Provisions a temporary, isolated environment for metadata and assets.
+    Hybrid strategy: Isolates DB and Storage so SemanticEngine does not pollute production.
     """
-    temp_dir = tempfile.mkdtemp()
-    db_path = os.path.join(temp_dir, "integration.db")
-    storage_path = os.path.join(temp_dir, "pdfs")
-    os.makedirs(storage_path)
+    settings = Settings.load_from_yaml()
+    settings.database.file = str(tmp_path / "test_integration_semantic.db")
+    settings.storage.selected = "local"
+    settings.storage.local.base_path = str(tmp_path / "storage_semantic")
     
-    yield {
-        "db_path": db_path,
-        "storage_path": storage_path,
-        "temp_dir": temp_dir
-    }
-    
-    shutil.rmtree(temp_dir)
+    deps._global_db = None
+    with patch("papers.backend.config.Settings.load_from_yaml", return_value=settings):
+        yield settings
+    deps._global_db = None
+
+@pytest.fixture
+def db_context(sys_settings):
+    """Provides a fresh, isolated database for integration tests."""
+    return BeaverDB(sys_settings.database.file)
 
 @pytest.mark.anyio
-async def test_full_semantic_pipeline(integration_env):
+async def test_full_semantic_pipeline(db_context, sys_settings):
     """
     Performs an end-to-end integration test of the semantic indexing pipeline.
 
@@ -42,7 +40,7 @@ async def test_full_semantic_pipeline(integration_env):
     3. Verifies that high-dimensional vectors are stored in the test database.
     4. Confirms that semantic similarity search returns the expected documents.
     """
-    test_db = BeaverDB(integration_env["db_path"])
+    test_db = db_context
     user_id = "integration_user"
     kb_id = f"kb_{user_id}"
     
@@ -75,15 +73,10 @@ async def test_full_semantic_pipeline(integration_env):
     async def mock_fetch(self, doi):
         return papers_data.get(doi)
         
-    async def mock_download(*args, **kwargs):
-        # AQUI LA CORRECCIÓN: Devolvemos tupla (bytes, mime_type)
+    async def mock_download(url, expected_mime):
         return b"%PDF-1.4 Fake Data", "application/pdf"
 
-    test_settings = Settings.load_from_yaml()
-    test_settings.database.file = integration_env["db_path"]
-    test_settings.storage.local.base_path = integration_env["storage_path"]
-
-    with patch("papers.backend.tasks.get_task_infrastructure", return_value=(test_settings, test_db)), \
+    with patch("papers.backend.tasks.get_task_infrastructure", return_value=(sys_settings, test_db)), \
          patch("papers.backend.data_sources.OpenAlexSource.fetch_by_doi", mock_fetch), \
          patch("papers.backend.tasks._download_asset", mock_download):
 
@@ -101,7 +94,7 @@ async def test_full_semantic_pipeline(integration_env):
     
     cache_source = get_data_source(
         "cache", 
-        settings=test_settings,
+        settings=sys_settings,
         db=test_db
     )
     

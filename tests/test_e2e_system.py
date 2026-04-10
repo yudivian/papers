@@ -2,10 +2,10 @@ import logging
 import time
 import pytest
 from fastapi.testclient import TestClient
-import importlib
 
 from papers.backend.main import app
 from papers.backend.models import DownloadStatus
+from papers.backend import deps
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,66 +17,62 @@ logger = logging.getLogger(__name__)
 
 USER_HEADERS = {"X-User-ID": "e2e_test_researcher"}
 
+def test_complete_system_lifecycle():
+    app.dependency_overrides.clear()
+    deps._global_db = None
+    deps._global_settings = None
 
-
-
-def test_complete_system_lifecycle(live_app_client):
-    """
-    Validates the end-to-end research workflow using live production infrastructure.
-    """
-    logger.info("Step 1: Verifying system health...")
-    health_response = live_app_client.get("/health")
-    assert health_response.status_code == 200
-
-    logger.info("Step 2: Provisioning a production Knowledge Base...")
-    kb_payload = {"name": "E2E Audit", "description": "Verified path"}
-    kb_res = live_app_client.post("/api/v1/kbs", json=kb_payload, headers=USER_HEADERS)
-    assert kb_res.status_code == 201
-    kb_id = kb_res.json()["kb_id"]
-
-    logger.info("Step 3: Triggering ingestion via API (Real Background Queue)...")
-    target_doi = "10.1371/journal.pcbi.1003833"
-    ingest_payload = {
-        "doi": target_doi,
-        "kb_id": kb_id,
-        "title": "Ten Simple Rules for Better Figures"
-    }
-
-    ingest_res = live_app_client.post("/api/v1/ingestion/start", json=ingest_payload, headers=USER_HEADERS)
-    assert ingest_res.status_code == 202
-    ticket_id = ingest_res.json()["ticket_id"]
-
-    logger.info("Step 4 & 5: Polling real background worker progress...")
-    max_retries = 20
-    for _ in range(max_retries):
-        status_res = live_app_client.get(f"/api/v1/ingestion/status/{ticket_id}", headers=USER_HEADERS)
-        status = status_res.json()["status"]
+    with TestClient(app) as client:
         
-        logger.info(f"Worker status -> {status}")
-        
-        if status == DownloadStatus.COMPLETED.value:
-            logger.info("Ingestion successfully completed by worker!")
-            break
-        elif status == DownloadStatus.FAILED.value:
-            error_msg = status_res.json().get("error_message", "Unknown error")
-            pytest.fail(f"Background worker failed during ingestion: {error_msg}")
-            
-        time.sleep(2)  # Damos respiro al hilo de Castor
-    else:
-        pytest.fail("The background worker did not complete the ingestion in time. Is the worker thread running?")
+        logger.info("Step 1: Verifying system health...")
+        health_res = client.get("/health")
+        assert health_res.status_code == 200
 
-    logger.info("Step 6: Testing classified semantic retrieval...")
-    search_query = "simple rules for better scientific figures"
-    search_res = live_app_client.get(f"/api/v1/discovery/search?q={search_query}&limit=1", headers=USER_HEADERS)
-    assert search_res.status_code == 200
-    
-    results = search_res.json()
-    assert isinstance(results, dict)
-    
-    found = False
-    for source, docs in results.items():
-        if any(doc["doi"] == target_doi for doc in docs):
-            found = True
-            break
+        logger.info("Step 2: Provisioning a Knowledge Base (Real DB)...")
+        kb_payload = {"name": "E2E REAL AUDIT", "description": "Verified path"}
+        kb_res = client.post("/api/v1/kbs", json=kb_payload, headers=USER_HEADERS)
+        assert kb_res.status_code == 201
+        kb_id = kb_res.json()["kb_id"]
+
+        logger.info("Step 3: Triggering ingestion via API (Real Worker)...")
+        target_doi = "10.1371/journal.pcbi.1003833"
+        ingest_payload = {
+            "doi": target_doi,
+            "kb_id": kb_id,
+            "title": "Ten Simple Rules for Better Figures"
+        }
+
+        ingest_res = client.post("/api/v1/ingestion/start", json=ingest_payload, headers=USER_HEADERS)
+        assert ingest_res.status_code == 202
+        ticket_id = ingest_res.json()["ticket_id"]
+
+        logger.info(f"Step 4 & 5: Polling worker progress (Ticket: {ticket_id})...")
+        for i in range(30):
+            status_res = client.get(f"/api/v1/ingestion/status/{ticket_id}", headers=USER_HEADERS)
+            status = status_res.json()["status"]
             
-    assert found is True
+            logger.info(f"Iteration {i+1} - Worker status -> {status}")
+            
+            if status == DownloadStatus.COMPLETED.value:
+                logger.info("SUCCESS: Ingestion completed by real background worker!")
+                break
+            elif status == DownloadStatus.FAILED.value:
+                error_msg = status_res.json().get("error_message", "Unknown error")
+                pytest.fail(f"Worker failed on real infrastructure: {error_msg}")
+                
+            time.sleep(2)
+        else:
+            pytest.fail("Timeout: The worker is not picking up the task from the real DB.")
+
+        logger.info("Step 6: Final Semantic Search Verification...")
+        search_query = "simple rules for better scientific figures"
+        search_res = client.get(f"/api/v1/discovery/search?q={search_query}&limit=1", headers=USER_HEADERS)
+        assert search_res.status_code == 200
+        
+        results = search_res.json()
+        found = False
+        for source, docs in results.items():
+            if any(doc["doi"] == target_doi for doc in docs):
+                found = True
+                break
+        assert found is True

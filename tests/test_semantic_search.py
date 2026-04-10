@@ -6,8 +6,34 @@ from papers.backend.config import Settings
 from papers.backend.models import GlobalDocumentMeta
 from papers.backend.data_sources import get_data_source
 
+import pytest
+import os
+from unittest.mock import patch, MagicMock
+from beaver import BeaverDB
+from papers.backend import deps
+from papers.backend.config import Settings
+
+from papers.backend.models import GlobalDocumentMeta
+from papers.backend.data_sources import get_data_source
+
 @pytest.fixture
-def semantic_db(tmp_path):
+def sys_settings(tmp_path):
+    """
+    Hybrid strategy: Loads real configuration but isolates database and storage
+    to a temporary directory.
+    """
+    settings = Settings.load_from_yaml()
+    settings.database.file = str(tmp_path / "test_semantic.db")
+    settings.storage.selected = "local"
+    settings.storage.local.base_path = str(tmp_path / "storage_semantic")
+    
+    deps._global_db = None
+    with patch("papers.backend.config.Settings.load_from_yaml", return_value=settings):
+        yield settings
+    deps._global_db = None
+
+@pytest.fixture
+def semantic_db(tmp_path, sys_settings):
     """
     Creates a temporary BeaverDB instance populated with mock 
     metadata and predictable semantic vectors.
@@ -65,7 +91,6 @@ async def test_semantic_ranking_and_retrieval(MockEngine, semantic_db):
     mock_engine_instance.generate_embedding.return_value = [1.0, 0.0, 0.0]
     MockEngine.return_value = mock_engine_instance
 
-    sys_settings = Settings.load_from_yaml()
     db_instance = BeaverDB(semantic_db)
     cache_source = get_data_source("cache", settings=sys_settings, db=db_instance)
 
@@ -78,13 +103,12 @@ async def test_semantic_ranking_and_retrieval(MockEngine, semantic_db):
     assert results[2].doi == "10.1000/bio"
 
 @pytest.mark.anyio
-async def test_cache_search_empty_database(tmp_path):
+async def test_cache_search_empty_database(tmp_path, sys_settings):
     """
     Validates that the adapter handles an empty database gracefully 
     without throwing mathematical errors (e.g., division by zero).
     """
     db_path = tmp_path / "empty.db"
-    sys_settings = Settings.load_from_yaml()
     db_instance = BeaverDB(str(db_path))
     cache_source = get_data_source("cache", settings=sys_settings, db=db_instance)
     
