@@ -6,7 +6,25 @@
  * unauthorized responses.
  */
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const ENV_CONFIG = {
+    development: {
+        // Puerto de FastAPI según tu config.yaml para desarrollo local
+        API_URL: 'http://127.0.0.1:8000/api/v1' 
+    },
+    production: {
+        // En producción usa la ruta relativa (si FastAPI sirve el frontend) 
+        // o pon aquí 'https://api.tudominio.com/api/v1' si están separados
+        API_URL: '/api/v1' 
+    }
+};
+
+// 2. Detección automática del entorno
+const currentHostname = window.location.hostname;
+const isDevelopment = currentHostname === 'localhost' || currentHostname === '127.0.0.1';
+
+// 3. Asignación de la URL final basada en las variables de arriba
+const API_BASE_URL = isDevelopment ? ENV_CONFIG.development.API_URL : ENV_CONFIG.production.API_URL;
+
 
 $.ajaxPrefilter(function(options, originalOptions, jqXHR) {
     if (!options.url.startsWith('http') && !options.url.includes('.html')) {

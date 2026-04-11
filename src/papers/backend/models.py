@@ -217,3 +217,11 @@ class CoreUserStatus(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp for the next daily quota renewal cycle.",
     )
+
+
+class LoginRequest(BaseModel):
+    """
+    Data model for receiving the exact credentials sent by the frontend.
+    """
+    user_id: str
+    password: str

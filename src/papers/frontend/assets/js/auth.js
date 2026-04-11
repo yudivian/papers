@@ -1,15 +1,11 @@
 /**
  * Authentication management module.
- *
- * Handles user session state via browser local storage and controls access
- * to protected routes by enforcing authentication requirements.
  */
 
 const TOKEN_KEY = 'papers_user_session';
 
 function requireAuth() {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
+    if (!localStorage.getItem(TOKEN_KEY)) {
         window.location.replace('/login.html');
     }
 }
@@ -18,33 +14,51 @@ function getAuthToken() {
     return localStorage.getItem(TOKEN_KEY);
 }
 
-async function loginUser(userId, password) {
-    // 1. Apuntamos EXPLÍCITAMENTE al puerto 8000 de FastAPI
-    try {
-        await fetch('http://localhost:8000/api/v1/auth/login', {
-            method: 'POST',
-            headers: {
-                'X-User-ID': userId,
-                'Content-Type': 'application/json'
+// Vinculamos el evento submit directamente al formulario para evitar que la página se recargue
+$(document).ready(function() {
+    // Asegúrate de que tu formulario en login.html tenga id="loginForm"
+    $('#loginForm').on('submit', function(e) {
+        e.preventDefault(); // <-- Esto detiene la recarga fantasma del navegador
+        
+        const userId = $('#userId').val().trim();
+        const password = $('#password').val().trim();
+        const $btn = $(this).find('button[type="submit"]');
+        
+        $btn.prop('disabled', true).text('Autenticando...');
+
+        // Usamos $.ajax para que el interceptor en api.js le ponga la URL base correcta
+        $.ajax({
+            url: '/auth/login', 
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                user_id: userId,
+                password: password
+            }),
+            success: function() {
+                // Guardamos la identidad para la sesión y para el interceptor de api.js
+                localStorage.setItem(TOKEN_KEY, userId);
+                localStorage.setItem('userId', userId);
+                
+                window.location.replace('/index.html');
+            },
+            error: function(err) {
+                console.error("Error en login:", err);
+                alert("Acceso denegado. Revisa tus credenciales.");
+                $btn.prop('disabled', false).text('Entrar');
             }
         });
-    } catch (e) {
-        console.error("Error de red contactando al backend:", e);
-    }
-
-    // 2. Guardamos la identidad y redirigimos al Workspace
-    localStorage.setItem(TOKEN_KEY, userId);
-    window.location.href = '/index.html';
-}
+    });
+});
 
 function logoutUser() {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('userId');
     window.location.replace('/login.html');
 }
 
 function redirectIfAuthenticated() {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (token) {
+    if (localStorage.getItem(TOKEN_KEY)) {
         window.location.replace('/index.html');
     }
 }
