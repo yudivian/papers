@@ -225,3 +225,65 @@ class LoginRequest(BaseModel):
     """
     user_id: str
     password: str
+    
+class OrcidExternalId(BaseModel):
+    """Represents a generic external ID (DOI, ISSN, EID, Scopus ID, etc.)"""
+    type: str         
+    value: str        
+    url: Optional[str] = None # 
+
+class OrcidAffiliation(BaseModel):
+    """Represents emplpyment, education or qualifications."""
+    organization: str
+    role: str
+    start_year: Optional[str] = None
+    end_year: Optional[str] = None
+
+class OrcidWork(BaseModel):
+    """Represents an individual researcher publication."""
+    title: str
+    type: str  
+    publication_year: Optional[str] = None
+    
+    external_ids: List[OrcidExternalId] = Field(default_factory=list)
+    
+    url: Optional[str] = None
+    journal_title: Optional[str] = None
+    source: Optional[str] = None      
+    citation: Optional[str] = None    
+    
+    created_date: Optional[int] = None
+    last_modified_date: Optional[int] = None
+
+
+class OrcidStatus(BaseModel):
+    """Documents representing orcid information for each user."""
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: str
+    orcid_id: str
+    is_enabled: bool = True
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    orcid_last_modified: Optional[int] = None 
+    local_last_checked: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class OrcidProfileResponse(BaseModel):
+    """Final user orcid information from payload to render in frontend"""
+    sync_status: str             
+    last_updated: datetime        
+    
+    orcid_id: str
+    full_name: str
+    credit_name: Optional[str] = None
+    biography: Optional[str] = None
+    keywords: List[str] = Field(default_factory=list)
+    
+    researcher_urls: List[Dict[str, str]] = Field(default_factory=list) 
+    
+    external_ids: List[OrcidExternalId] = Field(default_factory=list) 
+    
+    employments: List[OrcidAffiliation] = Field(default_factory=list)
+    educations: List[OrcidAffiliation] = Field(default_factory=list)
+    qualifications: List[OrcidAffiliation] = Field(default_factory=list)
+    
+    works: List[OrcidWork] = Field(default_factory=list)

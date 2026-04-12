@@ -120,6 +120,10 @@ class SearchConfig(BaseModel):
     """
 
     model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    
+class OrcidConfig(BaseModel):
+    enabled: bool = True
+    base_url: str = "https://orcid.org"
 
 
 class Settings(BaseSettings):
@@ -133,6 +137,7 @@ class Settings(BaseSettings):
     data_sources: DataSourcesConfig
     quotas: QuotasConfig
     search: SearchConfig
+    orcid: OrcidConfig = Field(default_factory=OrcidConfig)
 
     @classmethod
     def load_from_yaml(cls, yaml_path: str = "config.yaml") -> "Settings":

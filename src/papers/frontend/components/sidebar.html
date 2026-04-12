@@ -1,36 +1,49 @@
-<div id="mobileSidebarOverlay" class="fixed inset-0 bg-slate-900/50 z-40 hidden md:hidden backdrop-blur-sm transition-opacity opacity-0"></div>
+<div id="mobileSidebarOverlay"
+    class="fixed inset-0 bg-slate-900/50 z-40 hidden md:hidden backdrop-blur-sm transition-opacity opacity-0"></div>
 
-<div id="mainSidebar" class="w-64 bg-slate-900 text-white flex flex-col justify-between p-4 h-screen fixed z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out left-0 top-0">
+<div id="mainSidebar"
+    class="w-64 bg-slate-900 text-white flex flex-col justify-between p-4 h-screen fixed z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out left-0 top-0">
     <div>
         <div class="flex justify-between items-center mb-8">
             <h2 class="text-xl font-bold text-slate-100 text-center w-full">Papers AI</h2>
-            <button id="closeSidebarBtn" class="md:hidden text-slate-400 hover:text-white absolute right-4 text-2xl">&times;</button>
+            <button id="closeSidebarBtn"
+                class="md:hidden text-slate-400 hover:text-white absolute right-4 text-2xl">&times;</button>
         </div>
         <nav class="space-y-2">
-            <a href="/index.html" class="block py-2 px-4 hover:bg-slate-800 rounded-lg text-sm font-medium transition-colors">Discovery</a>
-            <a href="/library.html" class="block py-2 px-4 hover:bg-slate-800 rounded-lg text-sm font-medium text-slate-300 transition-colors">Workspace</a>
+            <a href="/index.html"
+                class="block py-2 px-4 hover:bg-slate-800 rounded-lg text-sm font-medium transition-colors">Discovery</a>
+            <a href="/library.html"
+                class="block py-2 px-4 hover:bg-slate-800 rounded-lg text-sm font-medium text-slate-300 transition-colors">Workspace</a>
+            <a href="/orcid_profile.html" id="navOrcidProfile"
+                class="hidden block py-2 px-4 hover:bg-slate-800 rounded-lg text-sm font-medium text-slate-300 transition-colors">ORCID
+                Profile</a>
         </nav>
     </div>
-    
+
     <div class="border-t border-slate-700 pt-4 space-y-2">
-        <button id="openDownloadsBtn" class="w-full py-2 px-4 text-left text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex justify-between items-center group">
+        <button id="openDownloadsBtn"
+            class="w-full py-2 px-4 text-left text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex justify-between items-center group">
             <span>Downloads</span>
-            <span id="downloadsBadge" class="hidden bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full group-hover:bg-blue-500 transition-colors">0</span>
+            <span id="downloadsBadge"
+                class="hidden bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full group-hover:bg-blue-500 transition-colors">0</span>
         </button>
-        <button id="openSettingsBtn" class="w-full py-2 px-4 text-left text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex justify-between items-center">
+        <button id="openSettingsBtn"
+            class="w-full py-2 px-4 text-left text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex justify-between items-center">
             <span>Settings</span>
         </button>
-        <button id="openUsageBtn" class="w-full py-2 px-4 text-left text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center group">
+        <button id="openUsageBtn"
+            class="w-full py-2 px-4 text-left text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center group">
             <span>Usage</span>
         </button>
-        <button onclick="logoutUser()" class="w-full py-2 px-4 text-left text-sm font-medium text-red-400 hover:text-red-300 hover:bg-slate-800 rounded-lg transition-colors">
+        <button onclick="logoutUser()"
+            class="w-full py-2 px-4 text-left text-sm font-medium text-red-400 hover:text-red-300 hover:bg-slate-800 rounded-lg transition-colors">
             Sign Out
         </button>
     </div>
 </div>
 
 <script>
-    $('#closeSidebarBtn, #mobileSidebarOverlay').on('click', function() {
+    $('#closeSidebarBtn, #mobileSidebarOverlay').on('click', function () {
         $('#mainSidebar').addClass('-translate-x-full');
         $('#mobileSidebarOverlay').removeClass('opacity-100').addClass('opacity-0');
         setTimeout(() => $('#mobileSidebarOverlay').addClass('hidden'), 300);

@@ -26,6 +26,15 @@ const UI = {
             if (typeof getAuthToken === 'function') {
                 $('#session-name').text(getAuthToken());
             }
+            $.ajax({
+                url: '/orcid/settings',
+                type: 'GET',
+                success: function(response) {
+                    if (response.is_enabled && response.has_orcid) {
+                        $('#navOrcidProfile').removeClass('hidden');
+                    }
+                }
+            });
         });
     },
     loadDownloadsPanel: function () {
