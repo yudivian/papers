@@ -21,18 +21,19 @@ data_sources:
   priority: 
     - "cache"
     - "openalex"
+    - "core"
   openalex:
     base_url: "https://api.openalex.org/works"
     system_keys: 
-      - "d1"
-      - "d2"
+      - "key"
+      - "key"
     daily_search_limit: 10
     allow_system_fallback: true
   core:
-    base_url: "https://api.core.ac.uk/v3/search/works"
+    base_url: "https://api.core.ac.uk/v3/search/outputs"
     system_keys:
-      - "dummy_core_key_1" 
-      - "dummy_core_key_2"
+      - "key" 
+      - "key"
     daily_search_limit: 20
     allow_system_fallback: true
     rate_limit_pause_seconds: 10
@@ -46,3 +47,27 @@ quotas:
 search:
   # Paraphrase Multilingual MiniLM is small, fast, and supports 50+ languages
   model_name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+orcid:
+  enable: true
+  base_url: "https://orcid.org"
+
+# LDAP Authentication Configuration
+ldap:
+  enabled: true
+  address: "ldap://address"
+  # Service account used to perform initial search binds
+  user: "user"
+  passwd: "password"
+  # Base Distinguished Name for the university directory
+  base_dn: "dc=uh,dc=cu"
+
+# Cryptographic Security Configuration
+security:
+  # Secret key used to sign JWT tokens. 
+  # Use a long, random string in production.
+  secret_key: "your-super-secret-key-here"
+  # Standard algorithm for JWT signing
+  algorithm: "HS256"
+  # Token validity period (1440 minutes = 24 hours)
+  token_expire_minutes: 1440
