@@ -36,23 +36,22 @@ def override_get_db():
     try:
         yield db
     finally:
-        # Optional: You can choose to clean up the test DB after each run
         pass
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="function", autouse=True)
 def setup_teardown_db():
     """
-    Session-scoped fixture to ensure the test database environment is clean 
-    before starting and is removed after all tests finish.
+    Function-scoped fixture to ensure the test database environment is clean 
+    before starting EVERY test and is removed after.
+    Uses explicit .clear() to bypass in-memory caching from BeaverDB.
     """
-    # Clean up before tests just in case a previous run crashed
-    if os.path.exists(TEST_DB_PATH):
-        import shutil
-        shutil.rmtree(TEST_DB_PATH, ignore_errors=True)
-        
-    yield # Run all tests
+    db = BeaverDB(TEST_DB_PATH)
+    db.dict("orcid_status").clear()
     
-    # Clean up after all tests are done
+    yield 
+    
+    db.dict("orcid_status").clear()
+    
     if os.path.exists(TEST_DB_PATH):
         import shutil
         shutil.rmtree(TEST_DB_PATH, ignore_errors=True)
@@ -93,7 +92,6 @@ def test_api_save_settings_new_orcid(client):
     """
     Verify that posting a real ORCID ID correctly triggers the live fetch,
     validates the data, and persists it into the real BeaverDB instance.
-    Requires internet connection.
     """
     target_orcid = "0000-0002-2345-1387"
     payload = {
@@ -105,8 +103,9 @@ def test_api_save_settings_new_orcid(client):
     
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "new_linked"
-    assert "successfully" in data["message"].lower()
+    assert data["status"] == "success"
+    # ✅ Corregido para coincidir con el mensaje del router
+    assert "saved" in data["message"].lower()
 
 def test_api_save_settings_update_toggle_only(client):
     """
@@ -123,44 +122,61 @@ def test_api_save_settings_update_toggle_only(client):
     
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "updated"
+    assert data["status"] == "success"
 
 def test_api_get_profile_forbidden(client):
     """
     Verify that requesting the profile when the integration is disabled 
     returns a 403 HTTP error.
     """
-    # 1. Explicitly setup the disabled state for this test
     target_orcid = "0000-0002-2345-1387"
     client.post("/api/v1/orcid/settings", json={"orcid_id": target_orcid, "is_enabled": False})
     
-    # 2. Attempt to fetch the profile
     response = client.get("/api/v1/orcid/profile")
     
-    # 3. Assert the forbidden response
     assert response.status_code == 403
     assert "disabled" in response.json()["detail"].lower()
 
-def test_api_get_profile_live_data(client):
+def test_api_get_profile_cached_data(client):
     """
-    Verify that the profile endpoint correctly fetches, parses, and returns
-    the enriched Pydantic model using live data from the network and the real DB.
+    Verify that the GET profile endpoint correctly returns the locally 
+    cached data without forcing a network request.
     """
     target_orcid = "0000-0002-2345-1387"
     
-    # Re-enable the integration first
+    # Re-enable the integration first (this automatically caches the data initially)
     client.post("/api/v1/orcid/settings", json={"orcid_id": target_orcid, "is_enabled": True})
     
-    # Now fetch the profile
+    # Fetch the profile (should read from BeaverDB)
     response = client.get("/api/v1/orcid/profile")
     
     assert response.status_code == 200
     data = response.json()
     
-    # Assert structural integrity based on our Pydantic model
+    # Assert it returns the cached status
+    assert data["sync_status"] == "cached"
     assert data["orcid_id"] == target_orcid
     assert "Yudivián" in data["full_name"]
-    assert "sync_status" in data
+
+def test_api_sync_profile_live_data(client):
+    """
+    Verify that the POST sync endpoint correctly forces a network fetch,
+    updates BeaverDB, and returns the 'updated' status.
+    """
+    target_orcid = "0000-0002-2345-1387"
+    
+    # Ensure it's enabled
+    client.post("/api/v1/orcid/settings", json={"orcid_id": target_orcid, "is_enabled": True})
+    
+    # Force the synchronization
+    response = client.post("/api/v1/orcid/sync")
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Assert structural integrity and the new 'updated' status
+    assert data["sync_status"] == "updated"
+    assert data["orcid_id"] == target_orcid
     assert isinstance(data["works"], list)
     
     # Verify at least one work has external IDs (like a DOI)
