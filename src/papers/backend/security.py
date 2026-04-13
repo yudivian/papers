@@ -1,88 +1,65 @@
 from fastapi import Header, Depends
-from beaver import BeaverDB
-from papers.backend.models import User, KnowledgeBase
 from papers.backend.config import Settings
+import jwt
+from datetime import datetime, timedelta, timezone
+from ldap3 import Server, Connection, ALL, SUBTREE
 
-# def get_settings() -> Settings:
-#     """
-#     Provide a cached or newly instantiated Settings object.
-    
-#     This acts as a FastAPI dependency to ensure configuration is loaded 
-#     and injected safely into other route dependencies without redundant 
-#     I/O operations on the YAML file.
-    
-#     Returns:
-#         A validated Settings instance containing application quotas and configurations.
-#     """
-#     return Settings.load_from_yaml()
 
-# def get_db(settings: Settings = Depends(get_settings)) -> BeaverDB:
-#     """
-#     Yield a thread-safe instance of the BeaverDB client.
-    
-#     This dependency abstracts the database connection lifecycle, allowing 
-#     FastAPI to manage the connection context per request dynamically.
-    
-#     Returns:
-#         An active BeaverDB instance connected to the configured storage file.
-#     """
-#     return BeaverDB(settings.database.file)
+def create_access_token(user_id: str, settings: Settings) -> str:
+    """
+    Creates a cryptographically signed JWT for the user session.
+    In production, this string replaces the plaintext user ID in headers.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.security.token_expire_minutes)
+    payload = {"sub": user_id, "exp": expire}
+    return jwt.encode(payload, settings.security.secret_key, algorithm=settings.security.algorithm)
 
-# async def get_current_user(
-#     x_user_id: str = Header(..., alias="X-User-ID"),
-#     settings: Settings = Depends(get_settings),
-#     db: BeaverDB = Depends(get_db)
-# ) -> User:
-#     """
-#     Intercept incoming requests to validate and provision user identity dynamically.
-    
-#     This function implements the Just-in-Time (JIT) provisioning architecture. 
-#     It queries the persistent 'users' dictionary in BeaverDB. If the identifier 
-#     is absent, it synthesizes a new User record based on system quotas, provisions 
-#     an initial Knowledge Base to prevent cold-start UI issues, and persists both 
-#     entities before granting request access.
-    
-#     Args:
-#         x_user_id: The unique identity string extracted from the HTTP headers.
-#         settings: The injected application configuration containing quota limits.
-#         db: The injected BeaverDB client instance.
+def verify_ldap(user_id: str, password: str, settings: Settings) -> dict | None:
+    """
+    Validates credentials against the university LDAP server.
+    Returns a dictionary with the extracted profile data if successful, None otherwise.
+    """
+    try:
+        server = Server(settings.ldap.address, get_info=ALL)
         
-#     Returns:
-#         A fully hydrated User Pydantic model representing the active session.
-#     """
-#     users_db = db.dict("users")
-    
-#     if x_user_id in users_db:
-#         user_data = users_db[x_user_id]
-#         return User.model_validate(user_data)
+        # 1. Bind with service account to find the researcher's DN
+        conn = Connection(
+            server,
+            f"cn={settings.ldap.user},{settings.ldap.base_dn}",
+            settings.ldap.passwd,
+            auto_bind=True
+        )
 
-#     quota_bytes = settings.quotas.user_logical_limit_gb * (1024 ** 3)
-    
-#     new_user = User(
-#         user_id=x_user_id,
-#         byte_quota=quota_bytes,
-#         used_bytes=0,
-#         metadata={"provisioned_via": "jit_gatekeeper"}
-#     )
-    
-#     users_db[x_user_id] = new_user.model_dump(mode="json")
+        conn.search(
+            search_base=settings.ldap.base_dn,
+            search_filter=f"(uid={user_id})",
+            search_scope=SUBTREE,
+            attributes=['cn', 'sn', 'ou', 'title']
+        )
 
-#     kbs_db = db.dict("knowledge_bases")
-#     default_kb_id = f"default-{x_user_id}"
-    
-#     default_kb = KnowledgeBase(
-#         kb_id=default_kb_id,
-#         owner_id=x_user_id,
-#         name=settings.app.initial_kb_name,
-#         description=settings.app.initial_kb_description,
-#         note="Automatically generated during first login."
-#     )
-    
-#     kbs_db[default_kb_id] = default_kb.model_dump(mode="json")
+        if not conn.entries:
+            return None
 
-#     return new_user
+        entry = conn.entries[0]
+        user_dn = entry.entry_dn
 
-from papers.backend.config import Settings
+        profile = {
+            "full_name": f"{entry.cn} {entry.sn}".strip() if hasattr(entry, 'cn') else user_id,
+            "department": str(entry.ou) if hasattr(entry, 'ou') else "",
+            "academic_title": str(entry.title) if hasattr(entry, 'title') else ""
+        }
+
+        # 2. Second bind to strictly validate the user's real password
+        user_conn = Connection(server, user_dn, password, auto_bind=True)
+        user_conn.unbind()
+        conn.unbind()
+
+        return profile
+    except Exception as e:
+        print(f"\n🚨 [DEBUG LDAP] Error crítico en la conexión o validación:")
+        print(f"🚨 Detalles: {e}\n")
+        return None
+
 
 def dummy_ldap_auth(user_id: str, password: str) -> bool:
     """
@@ -92,15 +69,16 @@ def dummy_ldap_auth(user_id: str, password: str) -> bool:
     # TODO: Implement actual LDAP connection logic here
     return False
 
+
 def authenticate_user(user_id: str, password: str, settings: Settings) -> bool:
     """
     Main gatekeeper for user authentication.
-    Evaluates the environment to decide whether to apply strict validation 
+    Evaluates the environment to decide whether to apply strict validation
     or bypass it for local development.
     """
     if settings.app.environment == "development":
         # Developer mode bypass
         return True
-    
+
     # Production mode: requires real verification
     return dummy_ldap_auth(user_id, password)

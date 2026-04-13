@@ -40,7 +40,7 @@
                 <div class="bg-white border border-slate-200 px-3 py-2 rounded-lg shadow-sm hidden sm:block">
                     <span class="text-sm text-slate-500">Session:</span>
                     <span id="displayUser"
-                        class="ml-1 font-semibold truncate max-w-[120px] inline-block align-bottom text-blue-600"></span>
+                         class="ml-1 font-bold text-blue-600 whitespace-nowrap"></span>
                 </div>
             </div>
         </header>
@@ -239,13 +239,6 @@
     <script src="/assets/js/ui.js"></script>
     <script src="/assets/js/utils.js"></script>
     <script src="/assets/js/workspace.js"></script>
-
-    <script>
-        $(document).ready(function () {
-            $('#displayUser').text(getAuthToken()); //
-            UI.loadSidebar();
-        });
-    </script>
 </body>
 
 </html>

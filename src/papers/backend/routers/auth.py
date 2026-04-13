@@ -97,6 +97,37 @@ async def provision_new_user(user_id: str, db: BeaverDB, settings: Settings) -> 
     return {"status": "provisioned", "message": "New user provisioned successfully"}
 
 
+# @router.post("/login")
+# async def login(
+#     credentials: LoginRequest,
+#     db: BeaverDB = Depends(get_db),
+#     settings: Settings = Depends(get_settings)
+# ):
+#     """
+#     Authenticates the user and returns their profile.
+#     If the authentication succeeds but the user does not exist in the database,
+#     it automatically provisions a new account and workspace.
+#     """
+#     # 1. The Gatekeeper: Validate credentials via security layer
+# # 1. The Gatekeeper: Validate credentials via security layer
+#     is_authenticated = authenticate_user(credentials.user_id, credentials.password, settings)    
+#     if not is_authenticated:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail="Invalid credentials or unauthorized access."
+#         )
+
+#     # 2. Fetch existing user from the database
+#     users_db = db.dict("users")
+#     if credentials.user_id in users_db:
+#         return {"status": "ok", "message": "Existing user authenticated"}
+
+#     # 3. Provisioning pipeline for first-time authenticated users
+#     return await provision_new_user(credentials.user_id, db, settings)
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from papers.backend.security import verify_ldap, create_access_token
+
 @router.post("/login")
 async def login(
     credentials: LoginRequest,
@@ -104,23 +135,54 @@ async def login(
     settings: Settings = Depends(get_settings)
 ):
     """
-    Authenticates the user and returns their profile.
-    If the authentication succeeds but the user does not exist in the database,
-    it automatically provisions a new account and workspace.
+    Authenticates the user and returns their session token.
+    Implements a strict environment branching to keep development frictionless.
     """
-    # 1. The Gatekeeper: Validate credentials via security layer
-# 1. The Gatekeeper: Validate credentials via security layer
-    is_authenticated = authenticate_user(credentials.user_id, credentials.password, settings)    
-    if not is_authenticated:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials or unauthorized access."
-        )
-
-    # 2. Fetch existing user from the database
     users_db = db.dict("users")
-    if credentials.user_id in users_db:
-        return {"status": "ok", "message": "Existing user authenticated"}
 
-    # 3. Provisioning pipeline for first-time authenticated users
-    return await provision_new_user(credentials.user_id, db, settings)
+    # ==========================================
+    # FLOW 1: PRODUCTION (Strict LDAP)
+    # ==========================================
+    if settings.app.environment == "production":
+        
+        profile_data = verify_ldap(credentials.user_id, credentials.password, settings)
+        if not profile_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid LDAP credentials"
+            )
+
+        # Base JIT Provisioning (Using your unmodified original function)
+        if credentials.user_id not in users_db:
+            await provision_new_user(credentials.user_id, db, settings)
+
+        # Store LDAP Identity in a completely separate dictionary to avoid coupling
+        ldap_db = db.dict("ldap_profiles")
+        ldap_db[credentials.user_id] = {
+            "user_id": credentials.user_id,
+            "full_name": profile_data.get("full_name", ""),
+            "department": profile_data.get("department", ""),
+            "academic_title": profile_data.get("academic_title", "")
+        }
+        
+        # In production, the token is a secure JWT
+        token = create_access_token(credentials.user_id, settings)
+        
+    # ==========================================
+    # FLOW 2: DEVELOPMENT (Unmodified fallback)
+    # ==========================================
+    else:
+        # Pass-through without password check
+        if credentials.user_id not in users_db:
+            await provision_new_user(credentials.user_id, db, settings)
+        
+        # In development, the token is just the plain user_id (same behavior as before)
+        token = credentials.user_id
+
+    # Return the token under a dedicated key
+    return {
+        "status": "ok", 
+        "message": "User authenticated", 
+        "access_token": token, 
+        "user_id": credentials.user_id
+    }

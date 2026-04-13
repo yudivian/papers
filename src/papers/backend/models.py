@@ -287,3 +287,13 @@ class OrcidProfileResponse(BaseModel):
     qualifications: List[OrcidAffiliation] = Field(default_factory=list)
     
     works: List[OrcidWork] = Field(default_factory=list)
+    
+class LDAPProfile(BaseModel):
+    """
+    Independent model to store university-specific identity data.
+    This ensures the core User model remains agnostic of the authentication provider.
+    """
+    user_id: str
+    full_name: str
+    department: str
+    academic_title: str

@@ -534,7 +534,6 @@ function renderSortedKBs() {
             valA = (a.name || '').toLowerCase();
             valB = (b.name || '').toLowerCase();
         } else if (sortField === 'docs') {
-            // ¡AQUÍ ESTÁ LA MAGIA! Tu variable original document_ids
             valA = a.document_ids ? a.document_ids.length : 0;
             valB = b.document_ids ? b.document_ids.length : 0;
         } else if (sortField === 'created_at') {
@@ -571,7 +570,7 @@ function renderSortedKBs() {
                 
                 <div class="flex-1 pr-14">
                     <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1">${kb.name}</h3>
-                    <p class="text-sm text-slate-500 mt-2 line-clamp-2">${kb.description || 'Sin descripción.'}</p>
+                    <p class="text-sm text-slate-500 mt-2 line-clamp-2">${kb.description || 'No description.'}</p>
                     <p class="text-[10px] font-bold text-slate-400 uppercase mt-4 tracking-wider flex items-center">
                         <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         Created: ${displayDate}

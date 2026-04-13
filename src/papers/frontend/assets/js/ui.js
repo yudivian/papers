@@ -24,7 +24,7 @@ const UI = {
                 .addClass('bg-slate-800 text-white font-bold');
 
             if (typeof getAuthToken === 'function') {
-                $('#session-name').text(getAuthToken());
+                $('#session-name').text(localStorage.getItem('userId') || 'Guess');
             }
             $.ajax({
                 url: '/orcid/settings',
@@ -65,10 +65,10 @@ $(document).ready(function () {
         const userToken = getAuthToken();
         if (userToken) {
             // Lo ponemos en el header (el que está al lado de "Session:")
-            $('#displayUser').text(userToken);
+            $('#displayUser').text(localStorage.getItem('userId') || 'Guess');
 
             // Y por si acaso, intentamos ponerlo en el sidebar (si ya cargó)
-            $('#session-name').text(userToken);
+            $('#session-name').text(localStorage.getItem('userId') || 'Guess');
         }
     }
 
@@ -145,15 +145,15 @@ $(document).on('click', '.js-btn-save-inline-kb', function() {
     if (!kbName) return;
 
     $btn.text('...').prop('disabled', true);
-    const token = localStorage.getItem('auth_token');
+    const token = getAuthToken();
 
     $.ajax({
-        url: '/api/v1/kbs',
+        url: '/kbs',
         type: 'POST',
         contentType: 'application/json',
-        headers: {
-            'Authorization': 'Bearer ' + token
-        },
+        // headers: {
+        //     'Authorization': 'Bearer ' + token
+        // },
         data: JSON.stringify({ name: kbName, description: "Creada automáticamente desde el selector" }),
         success: function(response) {
             const newId = response.kb_id || response.id || response.name;

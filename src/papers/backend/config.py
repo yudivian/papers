@@ -125,6 +125,18 @@ class OrcidConfig(BaseModel):
     enabled: bool = True
     base_url: str = "https://orcid.org"
 
+class LdapConfig(BaseModel):
+    """Configuration for the University LDAP server."""
+    address: str = "ldap://ldap.uh.cu"
+    user: str = "service_user"
+    passwd: str = "service_password"
+    base_dn: str = "dc=uh,dc=cu"
+
+class SecurityConfig(BaseModel):
+    """Configuration for JWT cryptographic signing."""
+    secret_key: str = "CHANGE_THIS_SECRET_KEY_IN_PRODUCTION"
+    algorithm: str = "HS256"
+    token_expire_minutes: int = 1440
 
 class Settings(BaseSettings):
     """
@@ -138,6 +150,9 @@ class Settings(BaseSettings):
     quotas: QuotasConfig
     search: SearchConfig
     orcid: OrcidConfig = Field(default_factory=OrcidConfig)
+    
+    ldap: LdapConfig = Field(default_factory=LdapConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
 
     @classmethod
     def load_from_yaml(cls, yaml_path: str = "config.yaml") -> "Settings":

@@ -1,7 +1,4 @@
 $(document).ready(function () {
-    if (typeof getAuthToken === 'function') {
-        $('#displayUser').text(getAuthToken());
-    }
 
     setTimeout(() => {
         if (typeof restoreTasks === 'function') restoreTasks();
