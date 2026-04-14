@@ -17,6 +17,8 @@ from papers.backend.models import (
 from papers.backend.config import Settings
 import logging
 
+from fastapi import HTTPException
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -70,7 +72,7 @@ class OpenAlexConfig(AdapterConfig):
     )
 
     use_personal_key: bool = Field(
-        default=True,
+        default=False,
         title="Enable Personal Key",
         description="Turn off to temporarily use the system pool without deleting your saved key.",
     )
@@ -88,7 +90,7 @@ class CoreConfig(AdapterConfig):
     )
 
     use_personal_key: bool = Field(
-        default=True,
+        default=False,
         title="Enable Personal Key",
         description="Turn off to temporarily use the system pool without deleting your saved key.",
     )
@@ -566,9 +568,25 @@ class OpenAlexSource(BaseDataSource):
         """
         Restricted text search operation. Subject to daily user quotas.
         """
-        self.logger.info(
-            f"🔍 [OpenAlex] Iniciando búsqueda de texto: '{query}' (límite: {limit})"
+        status = self._get_status()
+        configs_db = self.db.dict("user_adapter_configs")
+        user_configs = configs_db.get(self.user_id, {})
+        oa_config = user_configs.get(self.name, {})
+        
+        has_usable_personal_key = (
+            oa_config.get("use_personal_key", True)
+            and oa_config.get("personal_api_key")
+            and status.personal_key_active
         )
+        
+        if not has_usable_personal_key and status.daily_system_search_count >= getattr(self.config, "daily_search_limit", 100):
+            self.logger.warning("🛑 [OpenAlex] Search Daily Limit Reached.")
+            raise HTTPException(status_code=429, detail="You've reached your free OpenAlex search limit for today. Set up your own key in Settings or try again tomorrow.")
+
+        self.logger.info(
+            f"🔍 [OpenAlex] Init text search: '{query}' (límite: {limit})"
+        ) 
+        
         params = {"search": query, "per-page": limit}
 
         try:
@@ -578,13 +596,13 @@ class OpenAlexSource(BaseDataSource):
 
             if not data:
                 self.logger.warning(
-                    "⚠️ [OpenAlex] La búsqueda devolvió None (Vacío). Revisa logs superiores."
+                    "⚠️ [OpenAlex] Search return None (Empty). Check previous logs."
                 )
                 return []
 
             items = data.get("results", [])
             self.logger.info(
-                f"📄 [OpenAlex] La API devolvió {len(items)} resultados crudos. Iniciando mapeo..."
+                f"📄 [OpenAlex] API returm {len(items)} raw results. Init mapping..."
             )
 
             results = []
@@ -655,22 +673,30 @@ class OpenAlexSource(BaseDataSource):
 
                 except Exception as parse_error:
                     self.logger.error(
-                        f"⚠️ [OpenAlex] Falló parseo de un documento. Error: {parse_error}. ID Item: {item.get('id')}"
+                        f"⚠️ [OpenAlex] Document parsing failed. Error: {parse_error}. ID Item: {item.get('id')}"
                     )
                     continue
 
             self.logger.info(
-                f"✅ [OpenAlex] Búsqueda finalizada con éxito. Devolviendo {len(results)} documentos válidos."
+                f"✅ [OpenAlex] Search successful. Return {len(results)} valid documents."
             )
             return results
 
         except Exception as e:
             # Si el error es masivo, lo logueamos antes de que el Orchestrator lo calle
             self.logger.error(
-                f"🚨 [OpenAlex] Excepción fatal inesperada en search_by_text: {str(e)}",
+                f"🚨 [OpenAlex] Unexpected fatal failure in search_by_text: {str(e)}",
                 exc_info=True,
             )
-            raise e
+            if isinstance(e, HTTPException):
+                raise e
+                
+            if isinstance(e, httpx.HTTPStatusError):
+                status_code = e.response.status_code
+                if status_code in [500, 502, 503, 504]:
+                    raise HTTPException(status_code=502, detail="Openalex servers are overload. Try again later.")
+            
+            raise HTTPException(status_code=503, detail="Network error. Check your internet connection.")
 
     @classmethod
     def get_config_state(
@@ -945,22 +971,68 @@ class CoreSource(BaseDataSource):
 
     async def _execute_with_fallback(self, method: str, url: str, **kwargs) -> httpx.Response:
         """
-        The Universal Choke Point that executes the fallback mechanism.
+        Executes the HTTP request and elegantly iterates through the pool of API keys
+        if the current one fails (due to rate limits, invalidation, or server errors).
         """
-        api_key, is_personal = self._resolve_initial_key()
-        client = getattr(self, "_client", httpx.AsyncClient(timeout=20.0, follow_redirects=True))        
+        import httpx
+        
         try:
-            return await self._request_with_health_check(
-                client=client, method=method, url=url, user_id=self.user_id,
-                api_key=api_key, is_personal_key=is_personal, db=self.db, **kwargs
-            )
-        except KeyInvalidatedError:
-            self.logger.warning(f"[CORE] Rescue initiated for user {self.user_id}. Falling back to System Pool.")
-            fallback_key = self._get_system_key()
-            return await self._request_with_health_check(
-                client=client, method=method, url=url, user_id=self.user_id,
-                api_key=fallback_key, is_personal_key=False, db=self.db, **kwargs
-            )
+            initial_key, is_personal = self._resolve_initial_key()
+        except CoreAPIError:
+            initial_key, is_personal = None, False
+        
+        # Mantenimiento del cliente para evitar fugas de memoria
+        if getattr(self, "_client", None) is None:
+            self._client = httpx.AsyncClient(timeout=20.0, follow_redirects=True)
+        client = self._client
+
+        # 1. Construir la cola de llaves a probar
+        keys_to_try = [initial_key] if initial_key and str(initial_key).strip() != "None" else []
+        
+        # FIX: Usamos self.config en lugar de self.settings
+        system_keys = getattr(self.config, "system_keys", [])
+        if isinstance(system_keys, str):
+            system_keys = [system_keys] # Convertir a lista si es un solo string
+            
+        for k in system_keys:
+            if k and str(k).strip() != "None" and k not in keys_to_try:
+                keys_to_try.append(k)
+
+        # 2. Si no hay llaves válidas, forzamos un intento anónimo (sin cabecera)
+        if not keys_to_try:
+            keys_to_try = [""]
+
+        last_exception = None
+
+        # 3. Iterar sobre el pool de llaves
+        for attempt, key in enumerate(keys_to_try):
+            try:
+                # Solo marcamos como "personal" el primer intento si realmente lo es
+                current_is_personal = is_personal if attempt == 0 else False
+                
+                return await self._request_with_health_check(
+                    client=client, method=method, url=url, user_id=self.user_id,
+                    api_key=key, is_personal_key=current_is_personal, db=self.db, **kwargs
+                )
+                
+            except (KeyInvalidatedError, httpx.HTTPStatusError) as e:
+                # Atrapamos 401, 429, 500, etc. y pasamos a la siguiente llave
+                status_code = e.response.status_code if hasattr(e, "response") else "Desconocido"
+                self.logger.warning(f"[CORE] Intento {attempt + 1} falló (HTTP {status_code}). Rotando a la siguiente llave...")
+                last_exception = e
+                continue 
+                
+            except Exception as e:
+                # Atrapamos errores de red puros (Timeout, Socket cerrados)
+                self.logger.warning(f"[CORE] Error de red en intento {attempt + 1}: {str(e)}. Rotando llave...")
+                last_exception = e
+                continue
+
+        # 4. Si salimos del bucle, todas las llaves del pool fallaron
+        self.logger.error("[CORE] Se agotó el pool. Todas las llaves han fallado.")
+        if last_exception:
+            raise last_exception
+        raise Exception("Fallo total en la comunicación con CORE API")
 
     async def fetch_by_doi(self, doi: str) -> Optional[GlobalDocumentMeta]:
         """
@@ -993,15 +1065,16 @@ class CoreSource(BaseDataSource):
         self.logger.info(f"🔍 [CORE] Búsqueda en Outputs: '{query}' (límite: {limit})")
         
         status = self._get_status()
+        
         try:
             _, is_personal = self._resolve_initial_key()
         except CoreAPIError as e:
             self.logger.warning(f"🛑 [CORE] {str(e)}")
-            return []
+            raise HTTPException(status_code=401, detail="Invalid CORE key or search pool limit reached.")
         
-        if not is_personal and status.daily_system_search_count >= self.config.daily_search_limit:
+        if not is_personal and status.daily_system_search_count >= getattr(self.config, "daily_search_limit", 100):
             self.logger.warning("🛑 [CORE] Daily limits reached.")
-            return []
+            raise HTTPException(status_code=429, detail="You've reached your free CORE search limit for today. Set up your own key in Settings or try again tomorrow.")
 
         # Endpoint de registros individuales (Outputs) para garantizar el limit exacto
         url = "https://api.core.ac.uk/v3/search/outputs/"
@@ -1022,29 +1095,40 @@ class CoreSource(BaseDataSource):
                     meta = self._map_to_meta(item)
                     results.append(meta)
                 except Exception as e:
-                    self.logger.error(f"⚠️ [CORE] Falló mapeo de Output: {e}")
+                    self.logger.error(f"⚠️ [CORE] Output mapping failed: {e}")
             
             return results
             
         except Exception as e:
-            self.logger.error(f"🚨 [CORE] Error en búsqueda: {str(e)}", exc_info=True)
-            raise e
+            
+            self.logger.error(f"🚨 [CORE] Search error: {str(e)}", exc_info=True)
+            
+            if isinstance(e, HTTPException):
+                raise e
+                
+            if isinstance(e, KeyInvalidatedError):
+                raise HTTPException(status_code=401, detail="The configured CORE key is invalid or has been blocked. Check Settings.")
+                
+            if isinstance(e, httpx.HTTPStatusError):
+                status_code = e.response.status_code
+                if status_code in [401, 403]:
+                    raise HTTPException(status_code=401, detail="The configured CORE key is invalid or has been blocked. Check Settings")
+                if status_code in [500, 502, 503, 504]:
+                    raise HTTPException(status_code=502, detail="CORE's servers are temporarily unreachable. Please try again in a few minutes.")
+            
+            raise HTTPException(status_code=503, detail="Connection error with CORE. Check your internet access.")
 
 
     def _map_to_meta(self, item: dict) -> GlobalDocumentMeta:
-        # 1. IDENTIDAD (Igual que en OpenAlex)
         doi_val = item.get("doi")
         
-        # 2. Intento secundario: escarbar en los identificadores
         if not doi_val and "identifiers" in item:
             for ident in item.get("identifiers", []):
-                # CORE a veces devuelve diccionarios o strings planos
                 ident_str = ident.get("identifier", "") if isinstance(ident, dict) else str(ident)
                 if ident_str.startswith("10.") or "doi.org/" in ident_str:
                     doi_val = ident_str
                     break
 
-        # 3. Intento terciario: revisar las URLs de origen
         if not doi_val:
             urls = item.get("sourceFulltextUrls", [])
             for url in urls:
@@ -1052,18 +1136,14 @@ class CoreSource(BaseDataSource):
                     doi_val = url.split("doi.org/")[1]
                     break
 
-        # 4. Consolidación de Identidad
         if doi_val:
-            # Limpiamos el formato URL para quedarnos con el DOI canónico
             final_doi = doi_val.replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
             is_official = True
         else:
-            # Fallback (Solo si de verdad no existe DOI en ningún lado)
             core_id = str(item.get("id", ""))
             final_doi = f"core:{core_id}"
             is_official = False
 
-        # 2. AUTORES Y AÑO
         authors = []
         for a in (item.get("authors") or []):
             if isinstance(a, dict) and a.get("name"):
@@ -1079,23 +1159,19 @@ class CoreSource(BaseDataSource):
             except (ValueError, TypeError):
                 pass
 
-        # 3. METADATOS COMPLEMENTARIOS
-        # Usamos topics de CORE como keywords
         keywords = [str(t) for t in item.get("topics", [])[:10]]
-        
-        # Usamos el publisher como institución si está disponible
+
         institutions = []
         if item.get("publisher"):
             institutions.append(str(item.get("publisher")))
 
-        # 4. CONSTRUCCIÓN DEL MODELO
         return GlobalDocumentMeta(
             doi=final_doi,
             is_official_doi=is_official,
             title=item.get("title") or "Untitled",
             authors=authors,
             year=year,
-            file_size=0,  # Inicializado para Discovery
+            file_size=0,  
             storage_uri=item.get("downloadUrl") or item.get("sourceUrl") or "",
             source=self.name,
             abstract=item.get("abstract") or "",

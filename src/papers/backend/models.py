@@ -174,7 +174,7 @@ class OpenAlexUserStatus(BaseModel):
 
     user_id: str = Field(..., description="Unique identifier of the user.")
     personal_key_active: bool = Field(
-        default=True, description="System health status of the user's personal key."
+        default=False, description="System health status of the user's personal key."
     )
     daily_system_search_count: int = Field(
         default=0, description="Number of searches using the shared system pool."

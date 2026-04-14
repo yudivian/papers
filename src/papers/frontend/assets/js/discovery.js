@@ -167,11 +167,45 @@ $(document).ready(function () {
                     $block.find('h3').html(`<span>${icon}</span> Found in ${sourceName} (${docs.length})`);
                     docs.forEach(doc => renderDoiCard(doc, $content));
                 },
-                error: function () {
+                error: function (jqXHR) {
+                    // IMPRIME EN CONSOLA EL ERROR REAL (Pulsa F12 en tu navegador para verlo)
+                    console.error(`🚨 Error crudo en [${sourceId}]:`, jqXHR);
+
                     const $block = $(`#results-block-${sourceId}`);
                     $block.find('.animate-spin').remove();
                     $block.find('h3').html(`<span>${icon}</span> Error fetching from ${sourceName}`);
-                    $block.find('.results-content').html(`<p class="text-sm text-red-500 font-medium py-2">Failed to retrieve data from this source.</p>`);
+
+                    let errorMessage = "Failed to retrieve data from this source.";
+
+                    // 1er Intento: Formato nativo de FastAPI (JSON parseado automáticamente)
+                    if (jqXHR.responseJSON && jqXHR.responseJSON.detail) {
+                        errorMessage = jqXHR.responseJSON.detail;
+                    } 
+                    // 2do Intento: El JSON llegó como texto plano (Content-Type perdido)
+                    else if (jqXHR.responseText) {
+                        try {
+                            let parsed = JSON.parse(jqXHR.responseText);
+                            if (parsed.detail) errorMessage = parsed.detail;
+                            else if (parsed.message) errorMessage = parsed.message;
+                        } catch (e) {
+                            // Falló el parseo, es HTML o un texto raro del proxy/nginx. 
+                            // Evaluamos por el código de estado (status HTTP)
+                            if (jqXHR.status === 429) {
+                                errorMessage = "Límite de búsquedas agotado por hoy.";
+                            } else if (jqXHR.status >= 500) {
+                                errorMessage = "Los servidores de esta fuente están inactivos.";
+                            }
+                        }
+                    } 
+                    // 3er Intento: Error de red puro (CORS o Servidor apagado)
+                    else if (jqXHR.status === 0) {
+                        errorMessage = "Error de red. No hay conexión o el servidor bloqueó la respuesta.";
+                    } else if (jqXHR.status === 429) {
+                        errorMessage = "Límite de búsquedas agotado por hoy.";
+                    }
+
+                    // Imprimimos el mensaje final en la interfaz
+                    $block.find('.results-content').html(`<p class="text-sm text-red-500 font-medium py-2">${errorMessage}</p>`);
                 }
             });
         });
@@ -212,10 +246,10 @@ function renderDoiCard(meta, $container) {
     }
     if (meta.doi) {
         const $doiElement = $item.find('.js-doc-doi');
-        
+
         // 1. Verificamos que el backend no lo haya marcado explícitamente como falso
         const isOfficialBackend = meta.is_official_doi !== false;
-        
+
         // 2. Lo pasamos por tu validador de regex del frontend
         const sanitizedDoi = sanitizeAndValidateDoi(meta.doi);
 
