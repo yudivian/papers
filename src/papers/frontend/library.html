@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Papers AI Engine - Workspace</title>
+    <title>Plataforma de Ciencia - Espacio de Trabajo</title>
     <script src="/assets/js/tailwind-browser.js"></script>
     <script src="/assets/js/jquery-4.0.0.js"></script>
     <script src="/assets/js/auth.js"></script>
@@ -27,15 +27,15 @@
                     </svg>
                 </button>
                 <div>
-                    <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Workspace</h1>
-                    <p class="text-sm md:text-base text-slate-500 mt-1">Manage your knowledge bases and projects.</p>
+                    <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Espacio de Trabajo</h1>
+                    <p class="text-sm md:text-base text-slate-500 mt-1">Gestione sus Bases de Conocimiento</p>
                 </div>
             </div>
 
             <div class="flex flex-wrap gap-3 items-center w-full md:w-auto">
                 <button id="btnNewKB"
                     class="flex-1 md:flex-none bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors shadow-sm">
-                    + New Knowledge Base
+                    + Nueva Base de Conocimiento
                 </button>
                 <div class="bg-white border border-slate-200 px-3 py-2 rounded-lg shadow-sm hidden sm:block">
                     <span class="text-sm text-slate-500">Session:</span>
@@ -58,21 +58,21 @@
                     class="block w-full py-2 pl-10 pr-3 text-sm text-slate-700 border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all outline-none">
             </div>
             <div class="flex items-center space-x-4 overflow-x-auto">
-                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Sort by:</span>
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Ordenar por:</span>
                 <button
                     class="kb-sort-btn text-sm font-bold text-blue-600 flex items-center transition-colors whitespace-nowrap"
                     data-sort="created_at" data-dir="desc">
-                    Date <span class="sort-icon ml-1 text-xs font-bold">↓</span>
+                    Fecha <span class="sort-icon ml-1 text-xs font-bold">↓</span>
                 </button>
                 <button
                     class="kb-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
                     data-sort="name" data-dir="none">
-                    Name <span class="sort-icon ml-1 text-xs font-bold opacity-50">↑</span>
+                    Nombre <span class="sort-icon ml-1 text-xs font-bold opacity-50">↑</span>
                 </button>
                 <button
                     class="kb-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center transition-colors whitespace-nowrap"
                     data-sort="docs" data-dir="none">
-                    Documents <span class="sort-icon ml-1 text-xs font-bold opacity-50">↓</span>
+                    Documentos <span class="sort-icon ml-1 text-xs font-bold opacity-50">↓</span>
                 </button>
             </div>
         </div>
@@ -84,7 +84,7 @@
     <div class="mb-8">
         <button id="btnBackToGrid" class="flex items-center text-sm font-medium text-slate-500 hover:text-blue-600 transition-colors mb-5">
             <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
-            Back to Workspace
+            Volver al Espacio de Trabajo
         </button>
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
             <div>
@@ -108,15 +108,15 @@
             </div>
             
             <div class="flex items-center space-x-4 overflow-x-auto">
-                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Sort by:</span>
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Ordenar por:</span>
                 <button class="doc-sort-btn text-sm font-bold text-blue-600 flex items-center whitespace-nowrap" data-sort="ingested_at" data-dir="desc">
-                    Date <span class="sort-icon ml-1 text-xs font-bold">↓</span>
+                    Nombre <span class="sort-icon ml-1 text-xs font-bold">↓</span>
                 </button>
                 <button class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center whitespace-nowrap" data-sort="title" data-dir="none">
-                    Title <span class="sort-icon ml-1 text-xs font-bold opacity-50">↑</span>
+                    Título <span class="sort-icon ml-1 text-xs font-bold opacity-50">↑</span>
                 </button>
                 <button class="doc-sort-btn text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center whitespace-nowrap" data-sort="file_size" data-dir="none">
-                    Size <span class="sort-icon ml-1 text-xs font-bold opacity-50">↓</span>
+                    Tamaño <span class="sort-icon ml-1 text-xs font-bold opacity-50">↓</span>
                 </button>
             </div>
         </div>
@@ -132,17 +132,17 @@
         <div
             class="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden transform scale-95 transition-transform">
             <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 class="text-lg font-bold text-slate-800">Create Knowledge Base</h3>
+                <h3 class="text-lg font-bold text-slate-800">Crear Base de Conocimiento</h3>
                 <button id="btnCloseModal" class="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
             </div>
             <form id="formNewKB" class="p-6 space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Nombre</label>
                     <input type="text" id="kbName" required
                         class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Description (Optional)</label>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Descripción (Opcional)</label>
                     <textarea id="kbDesc" rows="3"
                         class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500"></textarea>
                 </div>
@@ -153,11 +153,11 @@
                     <div class="flex gap-2 w-full sm:w-auto">
                         <button type="button" id="btnCreateStay"
                             class="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200">
-                            Create & Stay
+                            Crear & Mantenerse
                         </button>
                         <button type="submit"
                             class="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-white bg-slate-800 hover:bg-slate-900 rounded-md shadow-sm">
-                            Create & Enter
+                            Crear & Entrar
                         </button>
                     </div>
                 </div>
@@ -170,27 +170,27 @@
         <div
             class="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden transform scale-95 transition-transform">
             <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 class="text-lg font-bold text-slate-800">Edit Knowledge Base</h3>
+                <h3 class="text-lg font-bold text-slate-800">Editar Base de Conocimiento</h3>
                 <button id="btnCloseEditModal" class="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
             </div>
             <form id="formEditKB" class="p-6 space-y-4">
                 <input type="hidden" id="editKbId">
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Nombre</label>
                     <input type="text" id="editKbName" required
                         class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Descripción</label>
                     <textarea id="editKbDesc" rows="3"
                         class="w-full px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-blue-500"></textarea>
                 </div>
                 <div class="pt-4 flex justify-end gap-3 border-t border-slate-100">
                     <button type="button" id="btnCancelEditModal"
-                        class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md">Cancel</button>
+                        class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md">Cancelar</button>
                     <button type="submit"
-                        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm">Save
-                        Changes</button>
+                        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm">Guardar
+                        Cambios</button>
                 </div>
             </form>
         </div>
@@ -213,9 +213,9 @@
                 <p id="confirmMessage" class="text-sm text-slate-500 mb-6"></p>
                 <div class="flex gap-3">
                     <button id="btnCancelConfirm"
-                        class="flex-1 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-md">Cancel</button>
+                        class="flex-1 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 rounded-md">Cancelar</button>
                     <button id="btnAcceptConfirm"
-                        class="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md">Delete</button>
+                        class="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md">Eliminar</button>
                 </div>
             </div>
         </div>
@@ -224,7 +224,7 @@
     <div id="settingsPanel"
         class="fixed inset-y-0 right-0 w-full sm:w-96 bg-white shadow-2xl transform translate-x-full transition-transform duration-300 z-[60] flex flex-col border-l border-slate-200">
         <div class="p-4 md:p-6 border-b border-slate-100 flex justify-between items-center">
-            <h2 class="text-lg md:text-xl font-bold text-slate-800">System Settings</h2>
+            <h2 class="text-lg md:text-xl font-bold text-slate-800">Configuración del Sistema</h2>
             <button id="closeSettingsBtn" class="text-slate-400 hover:text-slate-600 text-3xl">&times;</button>
         </div>
         <div class="flex flex-col md:flex-row flex-1 overflow-hidden">

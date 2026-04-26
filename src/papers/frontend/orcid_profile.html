@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Papers AI Engine - ORCID Profile</title>
+    <title>Plataforma de Ciencia - ORCID Profile</title>
     <script src="/assets/js/tailwind-browser.js"></script>
     <script src="/assets/js/jquery-4.0.0.js"></script>
     <script src="/assets/js/auth.js"></script>
@@ -23,12 +23,11 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                <p class="text-sm font-medium">Your profile data hasn't been updated recently. Sync now to fetch latest
-                    changes.</p>
+                <p class="text-sm font-medium">Tus datos de perfil no se han actualizado recientemente. Sincroniza ahora para obtener los últimos cambios.</p>
             </div>
             <button id="btnSyncNowBanner"
-                class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">Sync
-                Now</button>
+                class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">Sincroniza
+                Ahora</button>
         </div>
 
         <header
@@ -42,8 +41,7 @@
                 </button>
                 <div>
                     <h1 class="text-2xl md:text-3xl font-bold text-slate-800">ORCID Profile</h1>
-                    <p class="text-sm md:text-base text-slate-500 mt-1">Academic trajectory and publications
-                        synchronized from ORCID.</p>
+                    <p class="text-sm md:text-base text-slate-500 mt-1">Trayectoria académica y publicaciones sincronizadas desde ORCID.</p>
                 </div>
             </div>
 
@@ -73,7 +71,7 @@
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
                     </path>
                 </svg>
-                <span class="font-medium">Loading Data from ORCID...</span>
+                <span class="font-medium">Cargando Datos desde ORCID...</span>
             </div>
 
             <div id="orcid-content" class="hidden pb-12 w-full">
@@ -102,13 +100,13 @@
                     <div class="col-span-1 space-y-6">
                         <div id="prof-bio-section"
                             class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hidden">
-                            <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Biography</h2>
+                            <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Biografía</h2>
                             <p id="prof-bio" class="text-sm text-slate-600 whitespace-pre-line"></p>
                         </div>
 
                         <div id="prof-affiliations-section"
                             class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hidden">
-                            <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Trajectory</h2>
+                            <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Trajectoria</h2>
                             <div id="prof-affiliations" class="space-y-3"></div>
                         </div>
 
@@ -128,7 +126,7 @@
                     <div class="col-span-1 lg:col-span-2 space-y-8">
                         <div id="prof-works-section" class="hidden">
                             <div class="flex items-center justify-between border-b border-slate-200 pb-2 mb-4">
-                                <h2 class="text-lg font-bold text-slate-900">Publications</h2>
+                                <h2 class="text-lg font-bold text-slate-900">Publicaciones</h2>
                                 <span id="prof-works-count"
                                     class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">0</span>
                             </div>
@@ -149,7 +147,7 @@
                             d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
                         </path>
                     </svg>
-                    <h2 class="text-xl font-semibold text-slate-800 mb-2">Profile Not Available</h2>
+                    <h2 class="text-xl font-semibold text-slate-800 mb-2">Profile No Disponible</h2>
                     <p class="text-slate-500 mb-6" id="orcid-error-text"></p>
                     <button id="btnOpenSettingsFromError"
                         class="w-full px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold transition-all">Go
@@ -162,7 +160,7 @@
     <div id="settingsPanel"
         class="fixed inset-y-0 right-0 w-full sm:w-96 bg-white shadow-2xl transform translate-x-full transition-transform duration-300 z-[60] flex flex-col border-l border-slate-200">
         <div class="p-4 md:p-6 border-b border-slate-100 flex justify-between items-center">
-            <h2 class="text-lg md:text-xl font-bold text-slate-800">System Settings</h2>
+            <h2 class="text-lg md:text-xl font-bold text-slate-800">Configuración del Sistema</h2>
             <button id="closeSettingsBtn" class="text-slate-400 hover:text-slate-600 text-3xl">&times;</button>
         </div>
         <div class="flex flex-col md:flex-row flex-1 overflow-hidden">
